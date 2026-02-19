@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::Utc;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::info;
@@ -39,6 +40,85 @@ async fn main() -> Result<()> {
 
     // Broadcast channel for real-time query log push (WebSocket)
     let (query_log_tx, _) = broadcast::channel::<serde_json::Value>(256);
+
+    // Background: auto-refresh filter lists based on each list's update_interval_hours
+    {
+        let db = db_pool.clone();
+        let filter_engine = filter.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(3600));
+            ticker.tick().await; // skip immediate first tick
+            loop {
+                ticker.tick().await;
+                tracing::info!("Auto-refresh: checking filter lists...");
+
+                let lists: Vec<(String, String, Option<i64>, Option<String>)> = match sqlx::query_as(
+                    "SELECT id, url, update_interval_hours, last_updated
+                     FROM filter_lists WHERE is_enabled = 1 AND url != '' AND url IS NOT NULL"
+                ).fetch_all(&db).await {
+                    Ok(r) => r,
+                    Err(e) => { tracing::warn!("Auto-refresh DB error: {}", e); continue; }
+                };
+
+                let mut refreshed = false;
+                for (id, url, interval_hours, last_updated) in lists {
+                    let interval_h = interval_hours.unwrap_or(24);
+                    let due = last_updated
+                        .and_then(|s| chrono::DateTime::parse_from_rfc3339(&s).ok())
+                        .map(|last| {
+                            let elapsed = Utc::now().signed_duration_since(last.with_timezone(&Utc));
+                            elapsed.num_hours() >= interval_h
+                        })
+                        .unwrap_or(true);
+
+                    if due {
+                        match dns::subscription::sync_filter_list(&db, &id, &url).await {
+                            Ok(n) => { tracing::info!("Auto-refreshed filter {}: {} rules", id, n); refreshed = true; }
+                            Err(e) => tracing::warn!("Auto-refresh filter {}: {}", id, e),
+                        }
+                    }
+                }
+
+                if refreshed {
+                    if let Err(e) = filter_engine.reload().await {
+                        tracing::warn!("Filter reload after auto-refresh: {}", e);
+                    }
+                }
+            }
+        });
+    }
+
+    // Background: auto-cleanup query log based on query_log_retention_days setting
+    {
+        let db = db_pool.clone();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(6 * 3600));
+            ticker.tick().await; // skip immediate first tick
+            loop {
+                ticker.tick().await;
+                let retention: i64 = sqlx::query_scalar(
+                    "SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'query_log_retention_days'"
+                )
+                .fetch_optional(&db)
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or(30);
+
+                match sqlx::query(
+                    "DELETE FROM query_log WHERE time < datetime('now', ?)"
+                )
+                .bind(format!("-{} days", retention))
+                .execute(&db)
+                .await {
+                    Ok(r) if r.rows_affected() > 0 =>
+                        tracing::info!("Query log cleanup: deleted {} rows older than {} days", r.rows_affected(), retention),
+                    Ok(_) => {}
+                    Err(e) => tracing::warn!("Query log cleanup error: {}", e),
+                }
+            }
+        });
+    }
 
     tokio::try_join!(
         dns::serve(cfg.clone(), db_pool.clone(), filter.clone(), metrics.clone(), query_log_tx.clone()),

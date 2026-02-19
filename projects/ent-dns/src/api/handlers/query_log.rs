@@ -33,45 +33,49 @@ pub async fn list(
 ) -> AppResult<Json<Value>> {
     let limit = params.limit.clamp(1, 1000);
 
-    // Simple approach: fetch all rows matching filters and paginate in SQL.
-    // Future: build dynamic WHERE clause. For now, status filter is most common.
-    let rows: Vec<(i64, String, String, Option<String>, String, String, Option<String>, String, Option<String>, Option<i64>)> =
-        sqlx::query_as(
-            "SELECT id, time, client_ip, client_name, question, qtype, answer, status, reason, elapsed_ms
-             FROM query_log
-             ORDER BY time DESC
-             LIMIT ? OFFSET ?"
-        )
-        .bind(limit)
-        .bind(params.offset)
-        .fetch_all(&state.db)
-        .await?;
+    // Build dynamic WHERE clause with SQL-level filtering (fixes fake-pagination bug)
+    let mut conditions = Vec::<String>::new();
+    if params.status.is_some() {
+        conditions.push("status = ?".to_string());
+    }
+    if params.client.is_some() {
+        conditions.push("client_ip LIKE ?".to_string());
+    }
+    if params.domain.is_some() {
+        conditions.push("question LIKE ?".to_string());
+    }
 
-    let (total,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM query_log")
-        .fetch_one(&state.db)
-        .await?;
+    let where_clause = if conditions.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", conditions.join(" AND "))
+    };
 
-    // Apply optional in-memory filters (fast enough for typical usage)
+    let data_sql = format!(
+        "SELECT id, time, client_ip, client_name, question, qtype, answer, status, reason, elapsed_ms
+         FROM query_log {where_clause} ORDER BY time DESC LIMIT ? OFFSET ?"
+    );
+    let count_sql = format!("SELECT COUNT(*) FROM query_log {where_clause}");
+
+    // Build and execute queries with dynamic bindings
+    let rows = {
+        let mut q = sqlx::query_as::<_, (i64, String, String, Option<String>, String, String, Option<String>, String, Option<String>, Option<i64>)>(&data_sql);
+        if let Some(ref s) = params.status { q = q.bind(s); }
+        if let Some(ref c) = params.client  { q = q.bind(format!("%{c}%")); }
+        if let Some(ref d) = params.domain  { q = q.bind(format!("%{d}%")); }
+        q.bind(limit).bind(params.offset).fetch_all(&state.db).await?
+    };
+
+    let total: i64 = {
+        let mut q = sqlx::query_scalar::<_, i64>(&count_sql);
+        if let Some(ref s) = params.status { q = q.bind(s); }
+        if let Some(ref c) = params.client  { q = q.bind(format!("%{c}%")); }
+        if let Some(ref d) = params.domain  { q = q.bind(format!("%{d}%")); }
+        q.fetch_one(&state.db).await?
+    };
+
     let data: Vec<Value> = rows
         .into_iter()
-        .filter(|(_, _, client_ip, _, question, _, _, status, _, _)| {
-            if let Some(ref f) = params.status {
-                if status != f {
-                    return false;
-                }
-            }
-            if let Some(ref f) = params.client {
-                if !client_ip.contains(f.as_str()) {
-                    return false;
-                }
-            }
-            if let Some(ref f) = params.domain {
-                if !question.contains(f.as_str()) {
-                    return false;
-                }
-            }
-            true
-        })
         .map(|(id, time, client_ip, client_name, question, qtype, answer, status, reason, elapsed_ms)| {
             json!({
                 "id": id,
@@ -137,7 +141,6 @@ pub async fn export(
             ).into_response()
         }
         _ => {
-            // CSV format (default)
             let mut csv = String::from("id,time,client_ip,client_name,question,qtype,answer,status,reason,elapsed_ms\n");
             for (id, time, client_ip, client_name, question, qtype, answer, status, reason, elapsed_ms) in rows {
                 csv.push_str(&format!(
