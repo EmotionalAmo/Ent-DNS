@@ -17,7 +17,9 @@ pub struct DnsConfig {
     pub bind: String,
     #[serde(default)]
     pub upstreams: Vec<String>,
+    #[allow(dead_code)]
     pub doh_enabled: bool,
+    #[allow(dead_code)]
     pub dot_enabled: bool,
 }
 

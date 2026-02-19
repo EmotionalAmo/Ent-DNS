@@ -2,12 +2,13 @@
 //!
 //! Supported syntax:
 //!   `||example.com^`          — block domain and all subdomains
-//!   `@@||example.com^`        — allowlist domain and all subdomains  
+//!   `@@||example.com^`        — allowlist domain and all subdomains
 //!   `0.0.0.0 example.com`     — hosts-format block
 //!   `127.0.0.1 example.com`   — hosts-format redirect (treated as block for now)
 //!   `example.com`             — plain domain block (exact + subdomains)
 //!   `*.example.com`           — wildcard subdomain block
 //!   `# comment` / `! comment` — ignored
+#![allow(dead_code)]
 
 use std::collections::HashSet;
 

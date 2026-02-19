@@ -21,13 +21,16 @@ export interface AuthUser {
   role: string;
 }
 
-// Dashboard Types
+// Dashboard Types — matches backend snake_case response
 export interface DashboardStats {
-  totalQueries: number;
-  blockedQueries: number;
-  allowedQueries: number;
-  activeRules: number;
-  uptime: string;
+  total_queries: number;
+  blocked_queries: number;
+  allowed_queries: number;
+  cached_queries: number;
+  filter_rules: number;
+  filter_lists: number;
+  block_rate: number;
+  clients: number;
 }
 
 // Rules Types — matches backend: {id, rule, comment, is_enabled, created_by, created_at}
@@ -113,22 +116,24 @@ export interface CreateClientRequest {
   groups?: string[];
 }
 
-// User Types
+// User Types — matches backend roles
 export interface User {
   id: string;
   username: string;
-  role: 'admin' | 'user';
+  role: 'super_admin' | 'admin' | 'operator' | 'read_only';
+  is_active: boolean;
   created_at: string;
+  updated_at: string;
 }
 
 export interface CreateUserRequest {
   username: string;
   password: string;
-  role?: 'admin' | 'user';
+  role?: 'super_admin' | 'admin' | 'operator' | 'read_only';
 }
 
 export interface UpdateUserRequest {
-  role?: 'admin' | 'user';
+  role?: 'super_admin' | 'admin' | 'operator' | 'read_only';
 }
 
 // DNS Settings Types

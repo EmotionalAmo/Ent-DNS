@@ -3,7 +3,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -12,17 +12,6 @@ use crate::api::middleware::rbac::AdminUser;
 use crate::api::AppState;
 use crate::error::{AppError, AppResult};
 use crate::auth::password;
-
-/// Public user response (without password)
-#[derive(Debug, Serialize)]
-struct UserResponse {
-    id: String,
-    username: String,
-    role: String,
-    is_active: bool,
-    created_at: String,
-    updated_at: String,
-}
 
 #[derive(Debug, Deserialize)]
 pub struct CreateUserRequest {

@@ -21,12 +21,11 @@ export default function DashboardPage() {
     staleTime: 30000,
   });
 
-  // Backend returns snake_case
-  const totalQueries = (stats as any)?.total_queries ?? 0;
-  const blockedQueries = (stats as any)?.blocked_queries ?? 0;
-  const cachedQueries = (stats as any)?.cached_queries ?? 0;
-  const filterRules = (stats as any)?.filter_rules ?? 0;
-  const filterLists = (stats as any)?.filter_lists ?? 0;
+  const totalQueries = stats?.total_queries ?? 0;
+  const blockedQueries = stats?.blocked_queries ?? 0;
+  const cachedQueries = stats?.cached_queries ?? 0;
+  const filterRules = stats?.filter_rules ?? 0;
+  const filterLists = stats?.filter_lists ?? 0;
 
   // Format numbers
   const formatNumber = (num: number): string => {

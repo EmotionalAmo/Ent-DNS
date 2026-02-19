@@ -8,7 +8,7 @@ use super::auth::AuthUser;
 
 /// Axum extractor that requires the caller to have `admin` or `super_admin` role.
 /// Returns 403 Forbidden if the authenticated user has an insufficient role.
-pub struct AdminUser(pub Claims);
+pub struct AdminUser(#[allow(dead_code)] pub Claims);
 
 impl FromRequestParts<Arc<AppState>> for AdminUser {
     type Rejection = AppError;

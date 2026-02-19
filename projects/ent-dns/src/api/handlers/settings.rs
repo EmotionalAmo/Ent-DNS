@@ -1,22 +1,11 @@
 use axum::{extract::State, Json};
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 
 use crate::api::middleware::rbac::AdminUser;
 use crate::api::AppState;
 use crate::error::{AppError, AppResult};
-
-/// DNS settings response
-#[derive(Debug, Serialize)]
-struct DnsSettingsResponse {
-    upstreams: Vec<String>,
-    cache_ttl: u64,
-    query_log_retention_days: u64,
-    stats_retention_days: u64,
-    safe_search_enabled: bool,
-    parental_control_enabled: bool,
-}
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateDnsSettingsRequest {

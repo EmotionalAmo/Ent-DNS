@@ -3,7 +3,7 @@ export { default as apiClient } from './client';
 
 // Export API modules
 export { authApi } from './auth';
-export { dashboardApi, type ExtendedDashboardStats } from './dashboard';
+export { dashboardApi } from './dashboard';
 export { rulesApi } from './rules';
 export { filtersApi } from './filters';
 export { rewritesApi } from './rewrites';

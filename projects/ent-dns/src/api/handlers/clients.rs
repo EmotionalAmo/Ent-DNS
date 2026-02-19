@@ -3,7 +3,7 @@ use axum::{
     Json,
 };
 use chrono::Utc;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
 use uuid::Uuid;
@@ -11,18 +11,6 @@ use uuid::Uuid;
 use crate::api::middleware::auth::AuthUser;
 use crate::api::AppState;
 use crate::error::{AppError, AppResult};
-
-#[derive(Debug, Serialize)]
-struct ClientResponse {
-    id: String,
-    name: String,
-    identifiers: serde_json::Value,
-    upstreams: Option<serde_json::Value>,
-    filter_enabled: bool,
-    tags: Option<serde_json::Value>,
-    created_at: String,
-    updated_at: String,
-}
 
 #[derive(Debug, Deserialize)]
 pub struct CreateClientRequest {

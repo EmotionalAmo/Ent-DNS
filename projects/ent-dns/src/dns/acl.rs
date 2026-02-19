@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use ipnet::IpNet;
 use std::net::IpAddr;
 
