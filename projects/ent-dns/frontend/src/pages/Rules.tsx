@@ -283,7 +283,7 @@ export default function RulesPage() {
             placeholder="搜索规则..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           />
         </div>
         <div className="flex items-center gap-2">
@@ -370,7 +370,7 @@ export default function RulesPage() {
                     return (
                       <TableRow
                         key={rule.id}
-                        className={selectedIds.has(rule.id) ? 'bg-blue-50 dark:bg-blue-950' : ''}
+                        className={selectedIds.has(rule.id) ? 'bg-primary/10' : ''}
                       >
                         <TableCell>
                           <Checkbox
@@ -379,7 +379,7 @@ export default function RulesPage() {
                           />
                         </TableCell>
                         <TableCell>
-                          <code className="text-sm font-mono bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                          <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
                             {rule.rule}
                           </code>
                         </TableCell>

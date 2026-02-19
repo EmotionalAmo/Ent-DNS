@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Dialog,
   DialogContent,
@@ -136,12 +137,12 @@ function ClientDialog({
               <Label htmlFor="identifiers">
                 标识符 <span className="text-muted-foreground text-xs">(每行一个 IP 或 MAC)</span>
               </Label>
-              <textarea
+              <Textarea
                 id="identifiers"
                 value={form.identifiers}
                 onChange={(e) => setForm({ ...form, identifiers: e.target.value })}
                 placeholder="192.168.1.100&#10;AA:BB:CC:DD:EE:FF"
-                className="w-full h-20 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                className="h-20 font-mono"
               />
             </div>
 
@@ -149,12 +150,12 @@ function ClientDialog({
               <Label htmlFor="upstreams">
                 自定义上游 DNS <span className="text-muted-foreground text-xs">(可选，每行一个)</span>
               </Label>
-              <textarea
+              <Textarea
                 id="upstreams"
                 value={form.upstreams}
                 onChange={(e) => setForm({ ...form, upstreams: e.target.value })}
                 placeholder="1.1.1.1&#10;8.8.8.8"
-                className="w-full h-16 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-mono focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                className="h-16 font-mono"
               />
             </div>
 
@@ -291,7 +292,7 @@ export default function ClientsPage() {
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {client.identifiers?.map((id) => (
-                            <span key={id} className="text-xs bg-gray-100 dark:bg-gray-800 rounded px-1.5 py-0.5 font-mono">
+                            <span key={id} className="text-xs bg-muted rounded px-1.5 py-0.5 font-mono">
                               {id}
                             </span>
                           ))}
@@ -301,7 +302,7 @@ export default function ClientsPage() {
                         {client.upstreams?.length ? (
                           <div className="flex flex-wrap gap-1">
                             {client.upstreams.map((u) => (
-                              <span key={u} className="text-xs font-mono bg-blue-50 dark:bg-blue-950 px-1.5 py-0.5 rounded">
+                              <span key={u} className="text-xs font-mono bg-primary/10 px-1.5 py-0.5 rounded">
                                 {u}
                               </span>
                             ))}
@@ -316,7 +317,7 @@ export default function ClientsPage() {
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
                           {client.tags?.map((tag) => (
-                            <span key={tag} className="text-xs bg-purple-50 dark:bg-purple-950 text-purple-700 dark:text-purple-300 rounded px-1.5 py-0.5">
+                            <span key={tag} className="text-xs bg-accent text-accent-foreground rounded px-1.5 py-0.5">
                               {tag}
                             </span>
                           ))}

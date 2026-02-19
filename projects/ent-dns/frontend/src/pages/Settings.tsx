@@ -1,12 +1,15 @@
 import { useState, useEffect } from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { settingsApi, type DnsSettingsRecord, type UpdateDnsSettingsPayload } from '@/api/settings';
+import { upstreamsApi, type DnsUpstream, type CreateUpstreamRequest, type UpdateUpstreamRequest, type HealthCheckResult } from '@/api/upstreams';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { RefreshCw, Save, Settings as SettingsIcon, Shield } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import { RefreshCw, Save, Settings as SettingsIcon, Shield, Server, Plus, Trash2, Zap, Activity } from 'lucide-react';
 
 function SettingRow({
   label,
@@ -28,14 +31,162 @@ function SettingRow({
   );
 }
 
+function getStatusColor(status: string): string {
+  switch (status) {
+    case 'healthy': return 'bg-green-500';
+    case 'degraded': return 'bg-yellow-500';
+    case 'down': return 'bg-red-500';
+    default: return 'bg-gray-400';
+  }
+}
+
+function UpstreamDialog({
+  upstream,
+  onSave,
+  onCancel,
+}: {
+  upstream?: DnsUpstream;
+  onSave: (data: CreateUpstreamRequest | UpdateUpstreamRequest) => void;
+  onCancel: () => void;
+}) {
+  const [name, setName] = useState(upstream?.name || '');
+  const [addresses, setAddresses] = useState(upstream?.addresses.join(', ') || '');
+  const [priority, setPriority] = useState(upstream?.priority || 1);
+  const [interval, setInterval] = useState(upstream?.health_check_interval || 30);
+  const [timeout, setTimeout] = useState(upstream?.health_check_timeout || 5);
+  const [threshold, setThreshold] = useState(upstream?.failover_threshold || 3);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const addressesArray = addresses.split(',').map(a => a.trim()).filter(Boolean);
+    if (addressesArray.length === 0) {
+      toast.error('请至少输入一个 DNS 服务器地址');
+      return;
+    }
+
+    const data = upstream
+      ? ({
+          name,
+          addresses: addressesArray,
+          priority,
+          health_check_interval: interval,
+          health_check_timeout: timeout,
+          failover_threshold: threshold,
+        } as UpdateUpstreamRequest)
+      : ({
+          name,
+          addresses: addressesArray,
+          priority,
+          health_check_interval: interval,
+          health_check_timeout: timeout,
+          failover_threshold: threshold,
+        } as CreateUpstreamRequest);
+
+    onSave(data);
+  };
+
+  return (
+    <form onSubmit={handleSubmit}>
+      <div className="space-y-4 py-4">
+        <div className="space-y-2">
+          <Label htmlFor="name">名称</Label>
+          <Input
+            id="name"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="例如: Cloudflare Primary"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="addresses">DNS 服务器地址</Label>
+          <Input
+            id="addresses"
+            value={addresses}
+            onChange={(e) => setAddresses(e.target.value)}
+            placeholder="例如: 1.1.1.1:53, 1.0.0.1:53"
+          />
+          <p className="text-xs text-muted-foreground">多个地址用逗号分隔</p>
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="priority">优先级 (1=Primary, 2=Secondary)</Label>
+          <Input
+            id="priority"
+            type="number"
+            min="1"
+            max="10"
+            value={priority}
+            onChange={(e) => setPriority(Number(e.target.value))}
+          />
+        </div>
+        <div className="grid grid-cols-3 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="interval">检查间隔 (秒)</Label>
+            <Input
+              id="interval"
+              type="number"
+              min="10"
+              max="3600"
+              value={interval}
+              onChange={(e) => setInterval(Number(e.target.value))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="timeout">超时 (秒)</Label>
+            <Input
+              id="timeout"
+              type="number"
+              min="1"
+              max="30"
+              value={timeout}
+              onChange={(e) => setTimeout(Number(e.target.value))}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="threshold">故障阈值</Label>
+            <Input
+              id="threshold"
+              type="number"
+              min="1"
+              max="10"
+              value={threshold}
+              onChange={(e) => setThreshold(Number(e.target.value))}
+            />
+          </div>
+        </div>
+      </div>
+      <DialogFooter>
+        <Button type="button" variant="outline" onClick={onCancel}>取消</Button>
+        <Button type="submit">保存</Button>
+      </DialogFooter>
+    </form>
+  );
+}
+
 export default function SettingsPage() {
+  const queryClient = useQueryClient();
   const { data: settings, isLoading, error, refetch } = useQuery({
     queryKey: ['settings-dns'],
     queryFn: settingsApi.getDns,
   });
 
+  const { data: upstreams, isLoading: upstreamsLoading } = useQuery({
+    queryKey: ['upstreams'],
+    queryFn: upstreamsApi.list,
+  });
+
+  const { data: failoverLog } = useQuery({
+    queryKey: ['failover-log'],
+    queryFn: upstreamsApi.getFailoverLog,
+  });
+
   // Local form state
   const [form, setForm] = useState<UpdateDnsSettingsPayload>({});
+
+  // Dialog state
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingUpstream, setEditingUpstream] = useState<DnsUpstream | undefined>();
+  const [testingUpstream, setTestingUpstream] = useState<string | null>(null);
+  const [testResults, setTestResults] = useState<Record<string, HealthCheckResult>>({});
 
   // Sync form when settings load
   useEffect(() => {
@@ -59,8 +210,94 @@ export default function SettingsPage() {
     onError: (e: any) => toast.error(`保存失败: ${e.message}`),
   });
 
+  const createUpstreamMutation = useMutation({
+    mutationFn: (req: CreateUpstreamRequest) => upstreamsApi.create(req),
+    onSuccess: () => {
+      toast.success('Upstream 已创建');
+      setDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['upstreams'] });
+    },
+    onError: (e: any) => toast.error(`创建失败: ${e.message}`),
+  });
+
+  const updateUpstreamMutation = useMutation({
+    mutationFn: ({ id, req }: { id: string; req: UpdateUpstreamRequest }) =>
+      upstreamsApi.update(id, req),
+    onSuccess: () => {
+      toast.success('Upstream 已更新');
+      setDialogOpen(false);
+      setEditingUpstream(undefined);
+      queryClient.invalidateQueries({ queryKey: ['upstreams'] });
+    },
+    onError: (e: any) => toast.error(`更新失败: ${e.message}`),
+  });
+
+  const deleteUpstreamMutation = useMutation({
+    mutationFn: (id: string) => upstreamsApi.delete(id),
+    onSuccess: () => {
+      toast.success('Upstream 已删除');
+      queryClient.invalidateQueries({ queryKey: ['upstreams'] });
+    },
+    onError: (e: any) => toast.error(`删除失败: ${e.message}`),
+  });
+
+  const failoverMutation = useMutation({
+    mutationFn: () => upstreamsApi.triggerFailover(),
+    onSuccess: (result) => {
+      if (result.success) {
+        toast.success(`已切换到: ${result.message}`);
+      } else {
+        toast.warning(result.message);
+      }
+      queryClient.invalidateQueries({ queryKey: ['upstreams'] });
+      queryClient.invalidateQueries({ queryKey: ['failover-log'] });
+    },
+    onError: (e: any) => toast.error(`故障转移失败: ${e.message}`),
+  });
+
   const handleSave = () => {
     updateMutation.mutate(form);
+  };
+
+  const handleTestUpstream = async (id: string) => {
+    setTestingUpstream(id);
+    try {
+      const result = await upstreamsApi.testConnectivity(id);
+      setTestResults(prev => ({ ...prev, [id]: result }));
+      if (result.success) {
+        toast.success(`连接成功，延迟: ${result.latency_ms}ms`);
+      } else {
+        toast.error(`连接失败: ${result.error}`);
+      }
+    } catch (e: any) {
+      toast.error(`测试失败: ${e.message}`);
+    } finally {
+      setTestingUpstream(null);
+    }
+  };
+
+  const handleSaveUpstream = (data: CreateUpstreamRequest | UpdateUpstreamRequest) => {
+    if (editingUpstream) {
+      updateUpstreamMutation.mutate({ id: editingUpstream.id, req: data as UpdateUpstreamRequest });
+    } else {
+      createUpstreamMutation.mutate(data as CreateUpstreamRequest);
+    }
+  };
+
+  const handleDeleteUpstream = (id: string, name: string) => {
+    if (confirm(`确定要删除 "${name}" 吗？`)) {
+      deleteUpstreamMutation.mutate(id);
+    }
+  };
+
+  const handleCreateUpstream = () => {
+    setEditingUpstream(undefined);
+    setDialogOpen(true);
+  };
+
+  const handleEditUpstream = (upstream: DnsUpstream) => {
+    setEditingUpstream(upstream);
+    setDialogOpen(true);
   };
 
   if (isLoading) {
@@ -87,7 +324,7 @@ export default function SettingsPage() {
       {/* 页面标题 */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-lg font-semibold">DNS 设置</h2>
+          <h2 className="text-lg font-semibold">设置</h2>
           <p className="text-sm text-muted-foreground">配置 DNS 服务器行为和数据保留策略</p>
         </div>
         <Button onClick={handleSave} disabled={updateMutation.isPending}>
@@ -207,24 +444,152 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* 上游 DNS（只读显示） */}
+      {/* Upstream 管理 */}
       <Card>
         <CardHeader>
-          <CardTitle>上游 DNS</CardTitle>
-          <CardDescription>当前使用的上游 DNS 服务器（通过配置文件修改）</CardDescription>
+          <CardTitle className="flex items-center justify-between">
+            <span className="flex items-center gap-2">
+              <Server size={16} />
+              DNS 上游服务器
+            </span>
+            <Button size="sm" onClick={handleCreateUpstream}>
+              <Plus size={14} className="mr-1" />添加
+            </Button>
+          </CardTitle>
+          <CardDescription>配置上游 DNS 服务器和故障转移策略</CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-2">
-            {settings?.upstreams?.map((upstream) => (
-              <div key={upstream} className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-green-500 shrink-0" />
-                <code className="text-sm font-mono">{upstream}</code>
-              </div>
-            ))}
-            {!settings?.upstreams?.length && (
-              <p className="text-sm text-muted-foreground">未配置上游 DNS</p>
-            )}
+          {upstreamsLoading ? (
+            <div className="flex justify-center py-8">
+              <RefreshCw size={24} className="animate-spin text-muted-foreground" />
+            </div>
+          ) : upstreams && upstreams.length > 0 ? (
+            <div className="space-y-3">
+              {upstreams.map((upstream) => (
+                <div
+                  key={upstream.id}
+                  className="border rounded-lg p-4 space-y-3"
+                >
+                  <div className="flex items-start justify-between">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`w-2.5 h-2.5 rounded-full ${getStatusColor(upstream.health_status)}`}
+                          title={upstream.health_status}
+                        />
+                        <h4 className="font-medium">{upstream.name}</h4>
+                        <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                          优先级 {upstream.priority}
+                        </span>
+                      </div>
+                      <div className="text-sm text-muted-foreground space-y-1">
+                        <div>
+                          地址: {upstream.addresses.join(', ')}
+                        </div>
+                        {testResults[upstream.id] && (
+                          <div className={`text-xs ${testResults[upstream.id]?.success ? 'text-green-600' : 'text-red-600'}`}>
+                            {testResults[upstream.id]?.success
+                              ? `测试通过 (${testResults[upstream.id]?.latency_ms}ms)`
+                              : `测试失败: ${testResults[upstream.id]?.error}`}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleEditUpstream(upstream)}
+                      >
+                        编辑
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleTestUpstream(upstream.id)}
+                        disabled={testingUpstream === upstream.id}
+                      >
+                        {testingUpstream === upstream.id ? (
+                          <RefreshCw size={14} className="animate-spin" />
+                        ) : (
+                          <Activity size={14} />
+                        )}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDeleteUpstream(upstream.id, upstream.name)}
+                      >
+                        <Trash2 size={14} className="text-destructive" />
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>检查间隔: {upstream.health_check_interval}s</span>
+                    <span>超时: {upstream.health_check_timeout}s</span>
+                    <span>阈值: {upstream.failover_threshold}</span>
+                    <span>启用: {upstream.is_active ? '是' : '否'}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              暂无上游服务器，点击"添加"创建
+            </div>
+          )}
+          <div className="mt-4 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => failoverMutation.mutate()}
+              disabled={failoverMutation.isPending}
+              className="w-full"
+            >
+              <Zap size={16} className="mr-2" />
+              {failoverMutation.isPending ? '切换中...' : '手动故障转移'}
+            </Button>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* 故障转移日志 */}
+      <Card>
+        <CardHeader>
+          <CardTitle>故障转移日志</CardTitle>
+          <CardDescription>Upstream 切换历史记录</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {failoverLog && failoverLog.length > 0 ? (
+            <div className="space-y-2 max-h-60 overflow-y-auto">
+              {failoverLog.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="text-sm py-2 border-b last:border-0"
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-muted-foreground">
+                      {new Date(entry.timestamp).toLocaleString('zh-CN')}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      entry.action === 'failover_triggered' ? 'bg-yellow-100 text-yellow-800' :
+                      entry.action === 'recovered' ? 'bg-green-100 text-green-800' :
+                      'bg-red-100 text-red-800'
+                    }`}>
+                      {entry.action}
+                    </span>
+                  </div>
+                  <div className="text-muted-foreground text-xs mt-1">
+                    Upstream: {entry.upstream_id}
+                    {entry.reason && ` - ${entry.reason}`}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-4 text-muted-foreground text-sm">
+              暂无故障转移记录
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -238,6 +603,22 @@ export default function SettingsPage() {
           )}
         </Button>
       </div>
+
+      {/* Upstream Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {editingUpstream ? '编辑 Upstream' : '创建 Upstream'}
+            </DialogTitle>
+          </DialogHeader>
+          <UpstreamDialog
+            upstream={editingUpstream}
+            onSave={handleSaveUpstream}
+            onCancel={() => setDialogOpen(false)}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

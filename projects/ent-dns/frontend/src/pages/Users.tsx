@@ -34,10 +34,10 @@ import { Plus, RefreshCw, Users, Edit2, ShieldCheck } from 'lucide-react';
 type Role = 'super_admin' | 'admin' | 'operator' | 'read_only';
 
 const ROLE_LABELS: Record<Role, { label: string; color: string }> = {
-  super_admin: { label: '超级管理员', color: 'text-red-600 bg-red-50 dark:bg-red-950' },
-  admin: { label: '管理员', color: 'text-blue-600 bg-blue-50 dark:bg-blue-950' },
-  operator: { label: '操作员', color: 'text-green-600 bg-green-50 dark:bg-green-950' },
-  read_only: { label: '只读', color: 'text-gray-600 bg-gray-100 dark:bg-gray-800' },
+  super_admin: { label: '超级管理员', color: 'text-destructive bg-destructive/10' },
+  admin: { label: '管理员', color: 'text-primary bg-primary/10' },
+  operator: { label: '操作员', color: 'text-green-600 bg-green-500/10' },
+  read_only: { label: '只读', color: 'text-muted-foreground bg-muted' },
 };
 
 function RoleBadge({ role }: { role: Role }) {
@@ -278,8 +278,8 @@ export default function UsersPage() {
                       <TableCell>
                         <span className={`text-xs rounded px-2 py-0.5 ${
                           user.is_active
-                            ? 'bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300'
-                            : 'bg-gray-100 text-gray-500 dark:bg-gray-800'
+                            ? 'bg-green-500/10 text-green-700 dark:text-green-300'
+                            : 'bg-muted text-muted-foreground'
                         }`}>
                           {user.is_active ? '活跃' : '禁用'}
                         </span>

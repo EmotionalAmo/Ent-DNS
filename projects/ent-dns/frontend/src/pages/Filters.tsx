@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { filtersApi } from '@/api';
 import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 import {
   Table,
   TableBody,
@@ -106,14 +107,16 @@ function FilterTypeSelector({
             key={type.value}
             type="button"
             onClick={() => onChange(type.value)}
-            className={`
-              flex items-start gap-3 rounded-lg border-2 p-4 text-left transition-all
-              ${isSelected ? 'border-blue-500 bg-blue-50 dark:bg-blue-950' : 'border-gray-200 dark:border-gray-700'}
-            `}
+            className={cn(
+              'flex items-start gap-3 rounded-lg border-2 p-4 text-left transition-all',
+              isSelected
+                ? 'border-primary bg-primary/10'
+                : 'border-border hover:bg-muted/50'
+            )}
           >
-            <Globe size={18} className={isSelected ? 'text-blue-600 mt-0.5' : 'text-gray-400 mt-0.5'} />
+            <Globe size={18} className={cn('mt-0.5', isSelected ? 'text-primary' : 'text-muted-foreground')} />
             <div>
-              <div className={`text-sm font-medium ${isSelected ? 'text-blue-900 dark:text-blue-100' : 'text-gray-700 dark:text-gray-300'}`}>
+              <div className={cn('text-sm font-medium', isSelected ? 'text-primary' : 'text-foreground')}>
                 {type.label}
               </div>
               <div className="text-xs text-muted-foreground mt-0.5">{type.description}</div>
@@ -139,7 +142,7 @@ function PopularFiltersList({
             key={index}
             type="button"
             onClick={() => onSelect(filter)}
-            className="w-full flex items-start gap-3 rounded-lg border border-gray-200 dark:border-gray-700 p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="w-full flex items-start gap-3 rounded-lg border border-border p-3 text-left hover:bg-muted/50 transition-colors"
           >
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium truncate">{filter.name}</div>
@@ -292,10 +295,10 @@ function CreateFilterDialog({
             </div>
 
             {/* 帮助提示 */}
-            <div className="rounded-md bg-blue-50 dark:bg-blue-950 p-3">
+            <div className="rounded-md bg-primary/10 p-3">
               <div className="flex items-start gap-2">
-                <Info size={14} className="mt-0.5 text-blue-600 shrink-0" />
-                <div className="text-xs text-blue-900 dark:text-blue-100">
+                <Info size={14} className="mt-0.5 text-primary shrink-0" />
+                <div className="text-xs text-primary">
                   <p className="font-medium mb-1">关于过滤列表</p>
                   <ul className="space-y-0.5">
                     <li>• 远程列表：从 URL 自动同步规则</li>
@@ -562,7 +565,7 @@ export default function FiltersPage() {
             placeholder="搜索过滤列表..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           />
         </div>
         <div className="flex items-center gap-2">
@@ -675,7 +678,7 @@ export default function FiltersPage() {
                     return (
                       <TableRow
                         key={filter.id}
-                        className={selectedIds.has(filter.id) ? 'bg-blue-50 dark:bg-blue-950' : ''}
+                        className={selectedIds.has(filter.id) ? 'bg-primary/10' : ''}
                       >
                         <TableCell>
                           <Checkbox

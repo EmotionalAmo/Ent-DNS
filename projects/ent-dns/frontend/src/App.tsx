@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ToasterProvider } from './components/ui/sonner';
 import { ProtectedRoute } from './components/layout/ProtectedRoute';
 import { DashboardLayout } from './components/layout/DashboardLayout';
+import { ThemeProvider } from './contexts/ThemeContext';
 import { useAuthStore } from './stores/authStore';
 import { setAuthStoreCallbacks } from './api/client';
 import LoginPage from './pages/Login';
@@ -39,9 +40,10 @@ function App() {
   }, [token, clearAuth]);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <ToasterProvider />
-      <BrowserRouter>
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <ToasterProvider />
+        <BrowserRouter>
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
@@ -157,6 +159,7 @@ function App() {
         </Routes>
       </BrowserRouter>
     </QueryClientProvider>
+    </ThemeProvider>
   );
 }
 

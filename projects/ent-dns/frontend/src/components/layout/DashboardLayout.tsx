@@ -3,6 +3,7 @@ import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/api';
 import { toast } from 'sonner';
+import { useTheme } from '@/contexts/ThemeContext';
 import {
   BarChart3,
   List,
@@ -16,6 +17,9 @@ import {
   X,
   LogOut,
   CheckCircle,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -46,6 +50,7 @@ export function DashboardLayout({ title }: DashboardLayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, clearAuth } = useAuthStore();
+  const { theme, setTheme, actualTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleLogout = async () => {
@@ -169,10 +174,51 @@ export function DashboardLayout({ title }: DashboardLayoutProps) {
             {getCurrentTitle()}
           </h1>
 
-          {/* Status */}
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            <CheckCircle size={14} className="text-success" />
-            <span className="hidden sm:inline">DNS 服务正常</span>
+          {/* Status & Theme Toggle */}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <CheckCircle size={14} className="text-success" />
+              <span className="hidden sm:inline">DNS 服务正常</span>
+            </div>
+            {/* Theme Toggle */}
+            <div className="flex items-center gap-1 border-l pl-3">
+              <button
+                onClick={() => setTheme('light')}
+                className={cn(
+                  'p-1.5 rounded-md transition-colors',
+                  actualTheme === 'light' && theme !== 'dark'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Light theme"
+              >
+                <Sun size={16} />
+              </button>
+              <button
+                onClick={() => setTheme('dark')}
+                className={cn(
+                  'p-1.5 rounded-md transition-colors',
+                  actualTheme === 'dark' && theme !== 'light'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="Dark theme"
+              >
+                <Moon size={16} />
+              </button>
+              <button
+                onClick={() => setTheme('system')}
+                className={cn(
+                  'p-1.5 rounded-md transition-colors',
+                  theme === 'system'
+                    ? 'bg-accent text-accent-foreground'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                )}
+                title="System theme"
+              >
+                <Monitor size={16} />
+              </button>
+            </div>
           </div>
         </header>
 

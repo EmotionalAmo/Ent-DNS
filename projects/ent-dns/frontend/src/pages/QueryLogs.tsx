@@ -10,6 +10,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { RefreshCw, CheckCircle2, XCircle, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
 
@@ -113,37 +115,38 @@ export default function QueryLogsPage() {
           <form onSubmit={handleSearch} className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground">域名</label>
-              <input
+              <Input
                 type="text"
                 placeholder="过滤域名..."
                 value={domainFilter}
                 onChange={(e) => setDomainFilter(e.target.value)}
-                className="h-9 w-48 rounded-md border border-gray-300 bg-white px-3 py-1 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                className="h-9 w-48"
               />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground">客户端 IP</label>
-              <input
+              <Input
                 type="text"
                 placeholder="过滤客户端..."
                 value={clientFilter}
                 onChange={(e) => setClientFilter(e.target.value)}
-                className="h-9 w-40 rounded-md border border-gray-300 bg-white px-3 py-1 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+                className="h-9 w-40"
               />
             </div>
             <div className="flex flex-col gap-1">
               <label className="text-xs text-muted-foreground">状态</label>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value as typeof statusFilter)}
-                className="h-9 rounded-md border border-gray-300 bg-white px-3 py-1 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
-              >
-                {STATUS_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+              <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as typeof statusFilter)}>
+                <SelectTrigger className="h-9 w-32">
+                  <SelectValue placeholder="状态" />
+                </SelectTrigger>
+                <SelectContent>
+                  {STATUS_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="flex gap-2">
               <Button type="submit" size="sm" disabled={isFetching}>
@@ -213,7 +216,7 @@ export default function QueryLogsPage() {
                           <code className="text-sm font-mono">{log.question}</code>
                         </TableCell>
                         <TableCell className="text-xs">
-                          <span className="rounded bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 font-mono">
+                          <span className="rounded bg-muted px-1.5 py-0.5 font-mono">
                             {log.qtype}
                           </span>
                         </TableCell>

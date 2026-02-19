@@ -4,3 +4,4 @@ pub mod rule;
 pub mod client;
 pub mod log;
 pub mod rewrite;
+pub mod upstream;

@@ -91,7 +91,7 @@ function IpSelector({
             key={item.ip}
             type="button"
             onClick={() => onChange(item.ip)}
-            className="px-3 py-1.5 text-xs rounded-md border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="px-3 py-1.5 text-xs rounded-md border border-input hover:bg-muted/50 transition-colors"
           >
             {item.ip}
           </button>
@@ -115,7 +115,7 @@ function CommonRewritesList({
             key={index}
             type="button"
             onClick={() => onSelect({ domain: item.domain, ip: item.ip })}
-            className="w-full flex items-center justify-between rounded-md border border-gray-200 dark:border-gray-700 px-3 py-2 text-left hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+            className="w-full flex items-center justify-between rounded-md border border-input px-3 py-2 text-left hover:bg-muted/50 transition-colors"
           >
             <div className="flex-1 min-w-0">
               <div className="text-sm font-medium font-mono truncate">{item.domain}</div>
@@ -277,10 +277,10 @@ function CreateRewriteDialog({
             {/* 重写规则创建后立即生效 */}
 
             {/* 帮助提示 */}
-            <div className="rounded-md bg-blue-50 dark:bg-blue-950 p-3">
+            <div className="rounded-md bg-primary/10 p-3">
               <div className="flex items-start gap-2">
-                <Info size={14} className="mt-0.5 text-blue-600 shrink-0" />
-                <div className="text-xs text-blue-900 dark:text-blue-100">
+                <Info size={14} className="mt-0.5 text-primary shrink-0" />
+                <div className="text-xs text-primary">
                   <p className="font-medium mb-1">关于 DNS 重写</p>
                   <ul className="space-y-0.5">
                     <li>• 将指定域名的 DNS 查询解析到指定 IP</li>
@@ -491,7 +491,7 @@ export default function RewritesPage() {
             placeholder="搜索域名或 IP..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="flex h-10 w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-white"
+            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2"
           />
         </div>
         <div className="flex items-center gap-2">
@@ -597,7 +597,7 @@ export default function RewritesPage() {
                     return (
                       <TableRow
                         key={rewrite.id}
-                        className={selectedIds.has(rewrite.id) ? 'bg-blue-50 dark:bg-blue-950' : ''}
+                        className={selectedIds.has(rewrite.id) ? 'bg-primary/10' : ''}
                       >
                         <TableCell>
                           <Checkbox
@@ -608,7 +608,7 @@ export default function RewritesPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            <code className="text-sm font-mono bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                            <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
                               {rewrite.domain}
                             </code>
                             <button
@@ -622,7 +622,7 @@ export default function RewritesPage() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
-                            <code className="text-sm font-mono bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
+                            <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
                               {rewrite.answer}
                             </code>
                             {isLocalIp && (
