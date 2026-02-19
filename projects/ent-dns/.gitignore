@@ -1,0 +1,24 @@
+# Rust
+/target/
+Cargo.lock
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Config with secrets
+config.toml
+.env
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# TLS certs
+*.pem
+*.key
+*.crt
+
+# OS
+.DS_Store
