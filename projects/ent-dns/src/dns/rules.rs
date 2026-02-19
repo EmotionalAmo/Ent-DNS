@@ -128,10 +128,10 @@ impl RuleSet {
 
 /// Parse `||domain^`, `||domain^$options`, `|domain|`, `||domain`
 fn parse_adguard_domain(rule: &str) -> Option<String> {
-    let rest = if rule.starts_with("||") {
-        &rule[2..]
-    } else if rule.starts_with('|') {
-        &rule[1..]
+    let rest = if let Some(s) = rule.strip_prefix("||") {
+        s
+    } else if let Some(s) = rule.strip_prefix('|') {
+        s
     } else {
         return None;
     };

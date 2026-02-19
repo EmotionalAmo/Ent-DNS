@@ -175,7 +175,7 @@ pub async fn delete(
 ) -> AppResult<Json<Value>> {
     // Delete associated rules first
     sqlx::query("DELETE FROM custom_rules WHERE created_by = ?")
-        .bind(&format!("filter:{}", id))
+        .bind(format!("filter:{}", id))
         .execute(&state.db)
         .await?;
 

@@ -96,7 +96,7 @@ pub fn parse_adguard_rules(content: &str) -> (Vec<String>, Vec<String>) {
         }
 
         // Simple domain blocking (domain without special chars)
-        if !line.contains(|c| c == '/' || c == ':' || c == '*' || c == '^' || c == '|') {
+        if !line.contains(['/', ':', '*', '^', '|']) {
             // Check if it looks like a domain
             if line.contains('.') && !line.starts_with('.') && !line.ends_with('.') {
                 block_rules.push(format!("||{}^", line));
