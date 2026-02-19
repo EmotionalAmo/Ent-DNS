@@ -17,6 +17,7 @@ import QueryLogsPage from './pages/QueryLogs';
 import ClientsPage from './pages/Clients';
 import UsersPage from './pages/Users';
 import SettingsPage from './pages/Settings';
+import UpstreamsPage from './pages/Upstreams';
 
 // Create Query Client
 const queryClient = new QueryClient({
@@ -154,6 +155,19 @@ function App() {
             }
           >
             <Route index element={<QueryLogsPage />} />
+          </Route>
+
+          <Route
+            path="/upstreams"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout title="上游 DNS">
+                  <Outlet />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<UpstreamsPage />} />
           </Route>
 
           {/* Catch all - redirect to dashboard */}

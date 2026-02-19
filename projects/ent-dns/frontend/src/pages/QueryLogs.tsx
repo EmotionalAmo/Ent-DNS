@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { queryLogApi, type QueryLogListParams } from '@/api/queryLog';
+import { useQueryLogWebSocket } from '@/hooks/useQueryLogWebSocket';
 import {
   Table,
   TableBody,
@@ -13,7 +14,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { RefreshCw, CheckCircle2, XCircle, Globe, ChevronLeft, ChevronRight, Download } from 'lucide-react';
+import { RefreshCw, CheckCircle2, XCircle, Globe, ChevronLeft, ChevronRight, Download, Radio, Trash2 } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 const PAGE_SIZE = 50;
 
@@ -54,6 +56,22 @@ function formatTime(timeStr: string) {
   }
 }
 
+function WsStatusBadge({ status }: { status: string }) {
+  const config: Record<string, { color: string; label: string }> = {
+    connected:    { color: 'text-green-600',  label: '实时' },
+    connecting:   { color: 'text-yellow-500', label: '连接中' },
+    disconnected: { color: 'text-muted-foreground', label: '离线' },
+    error:        { color: 'text-red-500',    label: '错误' },
+  };
+  const { color, label } = config[status] ?? config.disconnected;
+  return (
+    <span className={cn('inline-flex items-center gap-1 text-xs font-medium', color)}>
+      <Radio size={11} className={status === 'connected' ? 'animate-pulse' : ''} />
+      {label}
+    </span>
+  );
+}
+
 export default function QueryLogsPage() {
   const [domainFilter, setDomainFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState<'blocked' | 'allowed' | 'all'>('all');
@@ -65,6 +83,8 @@ export default function QueryLogsPage() {
   });
   const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
   const [isExporting, setIsExporting] = useState(false);
+
+  const { wsStatus, liveEntries, clearEntries } = useQueryLogWebSocket({ maxEntries: 100 });
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['query-logs', appliedFilters],
@@ -211,6 +231,70 @@ export default function QueryLogsPage() {
               </Button>
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* 实时推送面板 */}
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-sm font-medium">
+              <Radio size={15} />
+              实时推送
+              <WsStatusBadge status={wsStatus} />
+            </CardTitle>
+            {liveEntries.length > 0 && (
+              <Button variant="ghost" size="sm" onClick={clearEntries} className="h-7 gap-1 text-xs">
+                <Trash2 size={12} />
+                清除
+              </Button>
+            )}
+          </div>
+          <CardDescription className="text-xs">WebSocket 实时接收 DNS 查询，无需刷新</CardDescription>
+        </CardHeader>
+        <CardContent className="p-0">
+          {liveEntries.length === 0 ? (
+            <div className="flex items-center justify-center py-6 text-xs text-muted-foreground">
+              {wsStatus === 'connected' ? '等待新的 DNS 查询...' : '实时推送未连接'}
+            </div>
+          ) : (
+            <div className="max-h-64 overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="text-xs">时间</TableHead>
+                    <TableHead className="text-xs">域名</TableHead>
+                    <TableHead className="text-xs">类型</TableHead>
+                    <TableHead className="text-xs">状态</TableHead>
+                    <TableHead className="text-xs">客户端</TableHead>
+                    <TableHead className="text-right text-xs">耗时</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {liveEntries.map((entry) => (
+                    <TableRow key={entry._key} className="text-xs">
+                      <TableCell className="text-muted-foreground whitespace-nowrap py-1.5">
+                        {formatTime(entry.time)}
+                      </TableCell>
+                      <TableCell className="py-1.5">
+                        <code className="font-mono">{entry.question}</code>
+                      </TableCell>
+                      <TableCell className="py-1.5">
+                        <span className="rounded bg-muted px-1.5 py-0.5 font-mono">{entry.qtype}</span>
+                      </TableCell>
+                      <TableCell className="py-1.5">
+                        <StatusBadge status={entry.status} />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground py-1.5">{entry.client_ip || '-'}</TableCell>
+                      <TableCell className="text-right text-muted-foreground py-1.5">
+                        {entry.elapsed_ms != null ? `${entry.elapsed_ms}ms` : '-'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </CardContent>
       </Card>
 

@@ -50,6 +50,8 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/metrics", get(handlers::metrics::prometheus_metrics))
         // Backup (admin only)
         .route("/api/v1/admin/backup", get(handlers::backup::create_backup))
+        // WebSocket: real-time query log stream (JWT via query param)
+        .route("/api/v1/ws/query-log", get(handlers::ws::query_log_ws))
         .with_state(state)
         // 前端静态文件 + SPA fallback（必须在 with_state 之后）
         .fallback_service(

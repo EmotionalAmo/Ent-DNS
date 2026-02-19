@@ -5,6 +5,7 @@ use hickory_proto::rr::{RData, Record, RecordType, rdata::{A, AAAA}};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::broadcast;
 use crate::config::Config;
 use crate::db::DbPool;
 use crate::metrics::DnsMetrics;
@@ -16,13 +17,14 @@ pub struct DnsHandler {
     cache: Arc<DnsCache>,
     db: DbPool,
     metrics: Arc<DnsMetrics>,
+    query_log_tx: broadcast::Sender<serde_json::Value>,
 }
 
 impl DnsHandler {
-    pub async fn new(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>) -> Result<Self> {
+    pub async fn new(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>, query_log_tx: broadcast::Sender<serde_json::Value>) -> Result<Self> {
         let resolver = Arc::new(DnsResolver::new(&cfg).await?);
         let cache = Arc::new(DnsCache::new());
-        Ok(Self { filter, resolver, cache, db, metrics })
+        Ok(Self { filter, resolver, cache, db, metrics, query_log_tx })
     }
 
     pub async fn handle_udp(&self, data: Vec<u8>, client_ip: String) -> Result<Vec<u8>> {
@@ -124,7 +126,7 @@ impl DnsHandler {
         Ok(response.to_vec()?)
     }
 
-    /// Fire-and-forget async query log write.
+    /// Fire-and-forget async query log write + WebSocket broadcast.
     fn log_query(&self, client_ip: String, domain: &str, qtype: &str, status: &str, reason: Option<&str>, elapsed_ms: i64) {
         let db = self.db.clone();
         let domain = domain.to_string();
@@ -132,6 +134,7 @@ impl DnsHandler {
         let status = status.to_string();
         let reason = reason.map(|s| s.to_string());
         let now = Utc::now().to_rfc3339();
+        let tx = self.query_log_tx.clone();
 
         tokio::spawn(async move {
             let _ = sqlx::query(
@@ -147,6 +150,18 @@ impl DnsHandler {
             .bind(elapsed_ms)
             .execute(&db)
             .await;
+
+            // Broadcast to WebSocket subscribers (ignore if no receivers)
+            let event = serde_json::json!({
+                "time": now,
+                "client_ip": client_ip,
+                "question": domain,
+                "qtype": qtype,
+                "status": status,
+                "reason": reason,
+                "elapsed_ms": elapsed_ms,
+            });
+            let _ = tx.send(event);
         });
     }
 

@@ -1,5 +1,6 @@
 use anyhow::Result;
 use tokio::net::UdpSocket;
+use tokio::sync::broadcast;
 use std::sync::Arc;
 use crate::config::Config;
 use crate::db::DbPool;
@@ -7,12 +8,12 @@ use crate::metrics::DnsMetrics;
 use super::filter::FilterEngine;
 use super::handler::DnsHandler;
 
-pub async fn run(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>) -> Result<()> {
+pub async fn run(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>, query_log_tx: broadcast::Sender<serde_json::Value>) -> Result<()> {
     let bind_addr = format!("{}:{}", cfg.dns.bind, cfg.dns.port);
     let socket = UdpSocket::bind(&bind_addr).await?;
     tracing::info!("DNS UDP listening on {}", bind_addr);
 
-    let handler = Arc::new(DnsHandler::new(cfg, db, filter, metrics).await?);
+    let handler = Arc::new(DnsHandler::new(cfg, db, filter, metrics, query_log_tx).await?);
     let socket = Arc::new(socket);
 
     loop {

@@ -1,5 +1,6 @@
 use anyhow::Result;
 use std::sync::Arc;
+use tokio::sync::broadcast;
 use tracing::info;
 
 mod api;
@@ -36,9 +37,12 @@ async fn main() -> Result<()> {
     // FilterEngine shared between DNS engine and Management API
     let filter = Arc::new(dns::filter::FilterEngine::new(db_pool.clone()).await?);
 
+    // Broadcast channel for real-time query log push (WebSocket)
+    let (query_log_tx, _) = broadcast::channel::<serde_json::Value>(256);
+
     tokio::try_join!(
-        dns::serve(cfg.clone(), db_pool.clone(), filter.clone(), metrics.clone()),
-        api::serve(cfg.clone(), db_pool.clone(), filter.clone(), metrics.clone()),
+        dns::serve(cfg.clone(), db_pool.clone(), filter.clone(), metrics.clone(), query_log_tx.clone()),
+        api::serve(cfg.clone(), db_pool.clone(), filter.clone(), metrics.clone(), query_log_tx),
     )?;
 
     Ok(())

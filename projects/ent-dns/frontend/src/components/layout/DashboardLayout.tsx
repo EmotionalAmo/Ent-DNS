@@ -20,6 +20,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  Server,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -36,6 +37,7 @@ const navItems: NavItem[] = [
   { path: '/filters', title: '过滤列表',     icon: <Shield size={16} /> },
   { path: '/rewrites',title: 'DNS 重写',     icon: <ArrowLeftRight size={16} /> },
   { path: '/clients', title: '客户端',        icon: <Laptop size={16} /> },
+  { path: '/upstreams', title: '上游 DNS',   icon: <Server size={16} /> },
   { path: '/logs',    title: '查询日志',     icon: <FileText size={16} /> },
   { path: '/settings',title: '设置',         icon: <Settings size={16} /> },
   { path: '/users',   title: '用户管理',     icon: <Users size={16} />, adminOnly: true },

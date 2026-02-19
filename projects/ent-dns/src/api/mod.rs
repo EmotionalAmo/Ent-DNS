@@ -2,6 +2,7 @@ use anyhow::Result;
 use axum::Router;
 use tower_http::cors::CorsLayer;
 use tower_http::trace::TraceLayer;
+use tokio::sync::broadcast;
 use std::sync::Arc;
 use crate::config::Config;
 use crate::db::DbPool;
@@ -18,9 +19,10 @@ pub struct AppState {
     pub jwt_secret: String,
     pub jwt_expiry_hours: u64,
     pub metrics: Arc<DnsMetrics>,
+    pub query_log_tx: broadcast::Sender<serde_json::Value>,
 }
 
-pub async fn serve(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>) -> Result<()> {
+pub async fn serve(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>, query_log_tx: broadcast::Sender<serde_json::Value>) -> Result<()> {
     let bind_addr = format!("{}:{}", cfg.api.bind, cfg.api.port);
     let state = Arc::new(AppState {
         db,
@@ -28,6 +30,7 @@ pub async fn serve(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: 
         jwt_secret: cfg.auth.jwt_secret.clone(),
         jwt_expiry_hours: cfg.auth.jwt_expiry_hours,
         metrics,
+        query_log_tx,
     });
     let app = build_app(state);
 
