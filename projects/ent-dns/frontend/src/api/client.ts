@@ -1,8 +1,9 @@
 import axios, { AxiosError, type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import type { ApiError } from './types';
 
-// Get API base URL from environment or default to localhost
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080';
+// 相对路径：开发时由 Vite proxy 转发到后端，生产时由后端直接 serve
+// 如需自定义（如反向代理子路径），可设 VITE_API_BASE_URL 环境变量
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || '';
 
 // Create axios instance
 const apiClient: AxiosInstance = axios.create({
