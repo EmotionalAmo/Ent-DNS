@@ -8,6 +8,7 @@ pub mod clients;
 pub mod settings;
 pub mod users;
 pub mod audit_log;
+pub mod backup;
 pub mod metrics;
 pub mod rewrites;
 pub mod upstreams;

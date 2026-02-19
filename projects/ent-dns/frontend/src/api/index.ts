@@ -16,6 +16,7 @@ export { settingsApi, type DnsSettingsRecord, type UpdateDnsSettingsPayload } fr
 export type {
   LoginRequest,
   LoginResponse,
+  ChangePasswordRequest,
   AuthUser,
   DashboardStats,
   Rule,

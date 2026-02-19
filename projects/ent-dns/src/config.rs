@@ -48,6 +48,40 @@ fn default_api_port() -> u16 { 8080 }
 fn default_db_path() -> String { "./ent-dns.db".to_string() }
 fn default_jwt_expiry() -> u64 { 24 }
 
+const DEFAULT_JWT_SECRET: &str = "change-me-in-production";
+
+pub fn validate(cfg: &Config) -> Result<()> {
+    // Security: Reject default JWT secret
+    if cfg.auth.jwt_secret == DEFAULT_JWT_SECRET {
+        anyhow::bail!(
+            "SECURITY ERROR: JWT secret must be changed from default value '{}'. \
+            Set ENT_DNS__AUTH__JWT_SECRET environment variable with a strong random value.",
+            DEFAULT_JWT_SECRET
+        );
+    }
+
+    // Security: JWT secret must be at least 32 characters
+    if cfg.auth.jwt_secret.len() < 32 {
+        anyhow::bail!(
+            "CONFIG ERROR: JWT secret must be at least 32 characters (current: {})",
+            cfg.auth.jwt_secret.len()
+        );
+    }
+
+    // Validate database path directory exists or can be created
+    if let Some(parent) = std::path::Path::new(&cfg.database.path).parent() {
+        if !parent.exists() {
+            anyhow::bail!(
+                "CONFIG ERROR: Database directory does not exist: {}",
+                parent.display()
+            );
+        }
+    }
+
+    tracing::info!("Configuration validation passed");
+    Ok(())
+}
+
 pub fn load() -> Result<Config> {
     let cfg = config::Config::builder()
         .add_source(config::File::with_name("config").required(false))
@@ -60,10 +94,12 @@ pub fn load() -> Result<Config> {
         .set_default("api.bind", "0.0.0.0")?
         .set_default("api.port", 8080)?
         .set_default("database.path", "./ent-dns.db")?
-        .set_default("auth.jwt_secret", "change-me-in-production")?
+        .set_default("auth.jwt_secret", DEFAULT_JWT_SECRET)?
         .set_default("auth.jwt_expiry_hours", 24)?
         .build()?
         .try_deserialize()?;
+
+    validate(&cfg)?;
 
     Ok(cfg)
 }

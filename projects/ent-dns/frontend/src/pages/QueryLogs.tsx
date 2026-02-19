@@ -13,7 +13,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { RefreshCw, CheckCircle2, XCircle, Globe, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RefreshCw, CheckCircle2, XCircle, Globe, ChevronLeft, ChevronRight, Download } from 'lucide-react';
 
 const PAGE_SIZE = 50;
 
@@ -63,6 +63,8 @@ export default function QueryLogsPage() {
     limit: PAGE_SIZE,
     offset: 0,
   });
+  const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
+  const [isExporting, setIsExporting] = useState(false);
 
   const { data, isLoading, error, refetch, isFetching } = useQuery({
     queryKey: ['query-logs', appliedFilters],
@@ -100,6 +102,26 @@ export default function QueryLogsPage() {
     setAppliedFilters(newFilters);
   };
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const blob = await queryLogApi.export({ format: exportFormat });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `query-logs-${new Date().toISOString().slice(0, 10)}.${exportFormat}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('Export failed:', error);
+      alert('导出失败，请重试');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* 过滤器 */}
@@ -112,57 +134,83 @@ export default function QueryLogsPage() {
           <CardDescription>实时 DNS 查询记录，每 10 秒自动刷新</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSearch} className="flex flex-wrap gap-3 items-end">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground">域名</label>
-              <Input
-                type="text"
-                placeholder="过滤域名..."
-                value={domainFilter}
-                onChange={(e) => setDomainFilter(e.target.value)}
-                className="h-9 w-48"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground">客户端 IP</label>
-              <Input
-                type="text"
-                placeholder="过滤客户端..."
-                value={clientFilter}
-                onChange={(e) => setClientFilter(e.target.value)}
-                className="h-9 w-40"
-              />
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-muted-foreground">状态</label>
-              <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as typeof statusFilter)}>
-                <SelectTrigger className="h-9 w-32">
-                  <SelectValue placeholder="状态" />
+          <div className="flex flex-col gap-3">
+            <form onSubmit={handleSearch} className="flex flex-wrap gap-3 items-end">
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">域名</label>
+                <Input
+                  type="text"
+                  placeholder="过滤域名..."
+                  value={domainFilter}
+                  onChange={(e) => setDomainFilter(e.target.value)}
+                  className="h-9 w-48"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">客户端 IP</label>
+                <Input
+                  type="text"
+                  placeholder="过滤客户端..."
+                  value={clientFilter}
+                  onChange={(e) => setClientFilter(e.target.value)}
+                  className="h-9 w-40"
+                />
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-muted-foreground">状态</label>
+                <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as typeof statusFilter)}>
+                  <SelectTrigger className="h-9 w-32">
+                    <SelectValue placeholder="状态" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {STATUS_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex gap-2">
+                <Button type="submit" size="sm" disabled={isFetching}>
+                  搜索
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => refetch()}
+                  disabled={isFetching}
+                >
+                  <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
+                </Button>
+              </div>
+            </form>
+
+            {/* 导出按钮 */}
+            <div className="flex items-center gap-2 border-t pt-3">
+              <label className="text-xs text-muted-foreground">导出格式</label>
+              <Select value={exportFormat} onValueChange={(val) => setExportFormat(val as 'csv' | 'json')}>
+                <SelectTrigger className="h-8 w-24">
+                  <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {STATUS_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </SelectItem>
-                  ))}
+                  <SelectItem value="csv">CSV</SelectItem>
+                  <SelectItem value="json">JSON</SelectItem>
                 </SelectContent>
               </Select>
-            </div>
-            <div className="flex gap-2">
-              <Button type="submit" size="sm" disabled={isFetching}>
-                搜索
-              </Button>
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => refetch()}
-                disabled={isFetching}
+                onClick={handleExport}
+                disabled={isExporting}
               >
-                <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
+                <Download size={14} className="mr-1" />
+                {isExporting ? '导出中...' : '导出'}
               </Button>
             </div>
-          </form>
+          </div>
         </CardContent>
       </Card>
 

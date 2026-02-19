@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { LoginRequest, LoginResponse, AuthUser } from './types';
+import type { LoginRequest, LoginResponse, ChangePasswordRequest, AuthUser } from './types';
 
 export const authApi = {
   // Login
@@ -11,6 +11,12 @@ export const authApi = {
   // Logout
   logout: async (): Promise<void> => {
     await apiClient.post('/api/v1/auth/logout');
+  },
+
+  // Change password
+  changePassword: async (data: ChangePasswordRequest): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.post('/api/v1/auth/change-password', data);
+    return response.data;
   },
 
   // Verify token (optional endpoint if exists)

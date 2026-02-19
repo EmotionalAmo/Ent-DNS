@@ -8,6 +8,12 @@ export interface LoginResponse {
   token: string;
   expires_in?: number;
   role: string;
+  requires_password_change: boolean;
+}
+
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string;
 }
 
 export interface AuthUser {

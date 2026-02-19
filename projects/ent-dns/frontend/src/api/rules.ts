@@ -35,4 +35,14 @@ export const rulesApi = {
   async deleteRules(ids: string[]): Promise<void> {
     await Promise.all(ids.map(id => this.deleteRule(id)));
   },
+
+  /**
+   * 导出规则
+   */
+  async exportRules(format: 'csv' | 'json'): Promise<Blob> {
+    const response = await apiClient.get(`/api/v1/rules/export?format=${format}`, {
+      responseType: 'blob',
+    });
+    return response.data;
+  },
 };

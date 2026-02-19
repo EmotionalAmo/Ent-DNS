@@ -34,6 +34,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -46,6 +47,7 @@ import {
   Shield,
   XCircle,
   CheckCircle2,
+  Download,
 } from 'lucide-react';
 
 /**
@@ -223,6 +225,8 @@ export default function RulesPage() {
   const [showExamples, setShowExamples] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
+  const [isExporting, setIsExporting] = useState(false);
 
   const { data: rules = [], isLoading, error, refetch } = useQuery<Rule[]>({
     queryKey: ['rules'],
@@ -273,6 +277,26 @@ export default function RulesPage() {
       hour: '2-digit', minute: '2-digit',
     });
 
+  const handleExport = async () => {
+    setIsExporting(true);
+    try {
+      const blob = await rulesApi.exportRules(exportFormat);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `rules-${new Date().toISOString().slice(0, 10)}.${exportFormat}`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error: any) {
+      console.error('Export failed:', error);
+      alert('导出失败，请重试');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* 头部操作栏 */}
@@ -289,6 +313,25 @@ export default function RulesPage() {
         <div className="flex items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
             <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
+          </Button>
+          <div className="h-6 w-px bg-border" />
+          <Select value={exportFormat} onValueChange={(val) => setExportFormat(val as 'csv' | 'json')}>
+            <SelectTrigger className="h-8 w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="csv">CSV</SelectItem>
+              <SelectItem value="json">JSON</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleExport}
+            disabled={isExporting}
+          >
+            <Download size={14} className="mr-1" />
+            {isExporting ? '导出中...' : '导出'}
           </Button>
           {selectedIds.size > 0 && (
             <Button variant="destructive" size="sm" onClick={() => setDeleteDialogOpen(true)}>

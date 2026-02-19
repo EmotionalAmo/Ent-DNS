@@ -45,6 +45,28 @@ export async function listQueryLogs(params: QueryLogListParams = {}): Promise<Qu
   return response.data;
 }
 
+export interface ExportParams {
+  format: 'csv' | 'json';
+  start_time?: string;
+  end_time?: string;
+}
+
+/**
+ * Export query logs
+ */
+export async function exportQueryLogs(params: ExportParams): Promise<Blob> {
+  const query = new URLSearchParams();
+  query.set('format', params.format);
+  if (params.start_time) query.set('start_time', params.start_time);
+  if (params.end_time) query.set('end_time', params.end_time);
+
+  const response = await apiClient.get(`/api/v1/query-log/export?${query.toString()}`, {
+    responseType: 'blob',
+  });
+  return response.data;
+}
+
 export const queryLogApi = {
   list: listQueryLogs,
+  export: exportQueryLogs,
 };

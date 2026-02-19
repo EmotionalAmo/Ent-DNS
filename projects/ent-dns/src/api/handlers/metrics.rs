@@ -1,10 +1,11 @@
 use axum::{extract::State, response::IntoResponse};
 use axum::http::header;
 use std::sync::Arc;
-use crate::api::AppState;
+use crate::api::{AppState, middleware::rbac::AdminUser};
 
 pub async fn prometheus_metrics(
     State(state): State<Arc<AppState>>,
+    _admin: AdminUser, // Require admin role to access metrics
 ) -> impl IntoResponse {
     let body = state.metrics.to_prometheus_text();
     (

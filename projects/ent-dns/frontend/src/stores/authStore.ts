@@ -9,9 +9,11 @@ interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  requiresPasswordChange: boolean;
 
   // Actions
   setAuth: (token: string, user: AuthUser) => void;
+  setRequiresPasswordChange: (requires: boolean) => void;
   clearAuth: () => void;
   setLoading: (loading: boolean) => void;
   setError: (error: string | null) => void;
@@ -25,6 +27,7 @@ export const useAuthStore = create<AuthState>()(
       isAuthenticated: false,
       isLoading: false,
       error: null,
+      requiresPasswordChange: false,
 
       setAuth: (token, user) =>
         set({
@@ -34,12 +37,18 @@ export const useAuthStore = create<AuthState>()(
           error: null,
         }),
 
+      setRequiresPasswordChange: (requires) =>
+        set({
+          requiresPasswordChange: requires,
+        }),
+
       clearAuth: () =>
         set({
           token: null,
           user: null,
           isAuthenticated: false,
           error: null,
+          requiresPasswordChange: false,
         }),
 
       setLoading: (isLoading) => set({ isLoading }),

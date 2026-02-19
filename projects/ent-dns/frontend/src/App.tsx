@@ -8,6 +8,7 @@ import { ThemeProvider } from './contexts/ThemeContext';
 import { useAuthStore } from './stores/authStore';
 import { setAuthStoreCallbacks } from './api/client';
 import LoginPage from './pages/Login';
+import ChangePasswordPage from './pages/ChangePassword';
 import DashboardPage from './pages/Dashboard';
 import RulesPage from './pages/Rules';
 import FiltersPage from './pages/Filters';
@@ -47,6 +48,7 @@ function App() {
         <Routes>
           {/* Public Routes */}
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/change-password" element={<ChangePasswordPage />} />
 
           {/* Protected Routes with Layout */}
           <Route

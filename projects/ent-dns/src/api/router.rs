@@ -11,6 +11,8 @@ pub fn routes(state: Arc<AppState>) -> Router {
         // Auth (public)
         .route("/api/v1/auth/login", post(handlers::auth::login))
         .route("/api/v1/auth/logout", post(handlers::auth::logout))
+        // Change Password (protected)
+        .route("/api/v1/auth/change-password", post(handlers::auth::change_password))
         // Dashboard (protected)
         .route("/api/v1/dashboard/stats", get(handlers::dashboard::get_stats))
         .route("/api/v1/dashboard/query-trend", get(handlers::dashboard::get_query_trend))
@@ -43,8 +45,10 @@ pub fn routes(state: Arc<AppState>) -> Router {
         // Audit log (admin only)
         .route("/api/v1/audit-log", get(handlers::audit_log::list))
         .route("/api/v1/settings/upstreams/failover-log", get(handlers::upstreams::failover_log))
-        // Prometheus metrics (public)
+        // Prometheus metrics (admin only - security fix)
         .route("/metrics", get(handlers::metrics::prometheus_metrics))
+        // Backup (admin only)
+        .route("/api/v1/admin/backup", get(handlers::backup::create_backup))
         .with_state(state)
         // 前端静态文件 + SPA fallback（必须在 with_state 之后）
         .fallback_service(
