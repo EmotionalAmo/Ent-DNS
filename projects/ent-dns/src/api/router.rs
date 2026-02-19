@@ -1,5 +1,6 @@
 use axum::{routing::{get, post, put, delete}, Router};
 use std::sync::Arc;
+use tower_http::services::{ServeDir, ServeFile};
 use super::AppState;
 use super::handlers;
 
@@ -38,4 +39,9 @@ pub fn routes(state: Arc<AppState>) -> Router {
         // Prometheus metrics (public)
         .route("/metrics", get(handlers::metrics::prometheus_metrics))
         .with_state(state)
+        // 前端静态文件 + SPA fallback（必须在 with_state 之后）
+        .fallback_service(
+            ServeDir::new("frontend/dist")
+                .fallback(ServeFile::new("frontend/dist/index.html"))
+        )
 }

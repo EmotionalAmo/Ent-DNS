@@ -1,107 +1,338 @@
 @import "tailwindcss";
 
-@theme {
-  --color-primary-50: rgb(var(--color-primary-50) / 1);
-  --color-primary-100: rgb(var(--color-primary-100) / 1);
-  --color-primary-200: rgb(var(--color-primary-200) / 1);
-  --color-primary-300: rgb(var(--color-primary-300) / 1);
-  --color-primary-400: rgb(var(--color-primary-400) / 1);
-  --color-primary-500: rgb(var(--color-primary-500) / 1);
-  --color-primary-600: rgb(var(--color-primary-600) / 1);
-  --color-primary-700: rgb(var(--color-primary-700) / 1);
-  --color-primary-800: rgb(var(--color-primary-800) / 1);
-  --color-primary-900: rgb(var(--color-primary-900) / 1);
+/*
+ * Ent-DNS Design System — index.css
+ * Tailwind v4 + shadcn/ui 正确接线方式
+ *
+ * 核心原则：
+ *   1. :root / .dark 里定义裸 HSL 值（无 hsl() 包裹）
+ *   2. @theme inline 块把这些 CSS 变量映射给 Tailwind v4 颜色工具类
+ *   3. @theme inline 里不能有自引用循环
+ *
+ * shadcn 组件消费的语义 token：
+ *   bg-background, bg-card, bg-primary, bg-muted, bg-accent,
+ *   bg-destructive, bg-popover, bg-secondary,
+ *   text-foreground, text-card-foreground, text-primary-foreground,
+ *   text-muted-foreground, text-accent-foreground,
+ *   border-border, border-input, ring-ring
+ */
 
-  --radius-sm: calc(var(--radius) * 0.5);
-  --radius-md: calc(var(--radius) * 1);
-  --radius-lg: calc(var(--radius) * 1.5);
-  --radius-xl: calc(var(--radius) * 2);
-  --radius-2xl: calc(var(--radius) * 2.5);
-
-  --color-success-50: rgb(var(--color-success-50) / 1);
-  --color-success-100: rgb(var(--color-success-100) / 1);
-  --color-success-200: rgb(var(--color-success-200) / 1);
-  --color-success-300: rgb(var(--color-success-300) / 1);
-  --color-success-400: rgb(var(--color-success-400) / 1);
-  --color-success-500: rgb(var(--color-success-500) / 1);
-  --color-success-600: rgb(var(--color-success-600) / 1);
-  --color-success-700: rgb(var(--color-success-700) / 1);
-  --color-success-800: rgb(var(--color-success-800) / 1);
-  --color-success-900: rgb(var(--color-success-900) / 1);
-}
-
+/* ─────────────────────────────────────────
+   1. CSS 变量定义（Light Mode）
+   ─────────────────────────────────────────
+   格式：裸 HSL 三元组，不含 hsl()
+   用法：hsl(var(--primary)) 或 hsl(var(--primary) / 0.1)
+   ───────────────────────────────────────── */
 :root {
-  --background: 0 0% 100%;
-  --foreground: 240 10% 3.9%;
+  /* 品牌色：靛蓝紫 — 参考 Linear 色系 */
+  --primary: 235 85% 60%;
+  --primary-foreground: 0 0% 100%;
+
+  /* 页面层 */
+  --background: 210 20% 98%;
+  --foreground: 222 25% 10%;
+
+  /* 卡片层（比背景白） */
   --card: 0 0% 100%;
-  --card-foreground: 240 10% 3.9%;
+  --card-foreground: 222 25% 10%;
+
+  /* Popover / Dropdown */
   --popover: 0 0% 100%;
-  --popover-foreground: 240 10% 3.9%;
-  --primary: 221.2 83.2% 53.3%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 240 4.8% 95.9%;
-  --secondary-foreground: 240 5.9% 10%;
-  --muted: 240 4.8% 95.9%;
-  --muted-foreground: 240 3.8% 46.1%;
-  --accent: 240 4.8% 95.9%;
-  --accent-foreground: 240 5.9% 10%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 5.9% 90%;
-  --input: 240 5.9% 90%;
-  --ring: 221.2 83.2% 53.3%;
+  --popover-foreground: 222 25% 10%;
+
+  /* 次要操作色 */
+  --secondary: 210 16% 93%;
+  --secondary-foreground: 222 25% 16%;
+
+  /* 弱化区域（skeleton, tag 背景） */
+  --muted: 210 16% 93%;
+  --muted-foreground: 215 14% 48%;
+
+  /* Accent（hover 背景） */
+  --accent: 210 16% 93%;
+  --accent-foreground: 222 25% 10%;
+
+  /* 危险/错误/拦截 */
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 0 0% 100%;
+
+  /* 边框与输入框 */
+  --border: 214 20% 88%;
+  --input: 214 20% 88%;
+
+  /* Focus ring */
+  --ring: 235 85% 60%;
+
+  /* 圆角基准 */
   --radius: 0.5rem;
 
-  --color-primary-50: 239 84% 98%;
-  --color-primary-100: 224 76% 94%;
-  --color-primary-200: 221 83% 89%;
-  --color-primary-300: 217 91% 81%;
-  --color-primary-400: 214 95% 72%;
-  --color-primary-500: 221 83% 53%;
-  --color-primary-600: 217 91% 60%;
-  --color-primary-700: 217 91% 53%;
-  --color-primary-800: 224 76% 48%;
-  --color-primary-900: 240 100% 43%;
+  /* 语义色：直接用 Tailwind 的 emerald/red/sky/violet 系列 badge 即可
+     以下仅供自定义组件使用 */
+  --success: 142 71% 45%;
+  --success-foreground: 0 0% 100%;
 
-  --color-success-50: 142 76% 96%;
-  --color-success-100: 142 71% 91%;
-  --color-success-200: 140 67% 84%;
-  --color-success-300: 142 61% 73%;
-  --color-success-400: 142 61% 64%;
-  --color-success-500: 142 76% 36%;
-  --color-success-600: 142 84% 33%;
-  --color-success-700: 142 84% 29%;
-  --color-success-800: 142 84% 25%;
-  --color-success-900: 142 84% 22%;
+  --warning: 38 92% 50%;
+  --warning-foreground: 38 92% 10%;
+
+  --info: 199 89% 48%;
+  --info-foreground: 0 0% 100%;
+
+  /* 侧边栏专属变量（不通过 Tailwind 类使用，直接写在 aside 的 style 里 or bg-sidebar） */
+  --sidebar-bg: 225 25% 14%;
+  --sidebar-border: 225 20% 20%;
+  --sidebar-text: 215 20% 65%;
+  --sidebar-text-active: 0 0% 100%;
+  --sidebar-active-bg: 235 85% 60%;
 }
 
+/* ─────────────────────────────────────────
+   2. Dark Mode CSS 变量
+   ───────────────────────────────────────── */
 .dark {
-  --background: 240 10% 3.9%;
-  --foreground: 0 0% 98%;
-  --card: 240 10% 3.9%;
-  --card-foreground: 0 0% 98%;
-  --popover: 240 10% 3.9%;
-  --popover-foreground: 0 0% 98%;
-  --primary: 217.2 91.2% 59.8%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 240 3.7% 15.9%;
-  --secondary-foreground: 0 0% 98%;
-  --muted: 240 3.7% 15.9%;
-  --muted-foreground: 240 5% 64.9%;
-  --accent: 240 3.7% 15.9%;
-  --accent-foreground: 0 0% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 3.7% 15.9%;
-  --input: 240 3.7% 15.9%;
-  --ring: 224.3 76.3% 48%;
+  --primary: 235 80% 65%;
+  --primary-foreground: 0 0% 100%;
+
+  --background: 222 20% 11%;
+  --foreground: 210 20% 93%;
+
+  --card: 222 20% 13%;
+  --card-foreground: 210 20% 93%;
+
+  --popover: 222 20% 13%;
+  --popover-foreground: 210 20% 93%;
+
+  --secondary: 215 20% 20%;
+  --secondary-foreground: 210 20% 93%;
+
+  --muted: 215 20% 20%;
+  --muted-foreground: 215 14% 55%;
+
+  --accent: 215 20% 20%;
+  --accent-foreground: 210 20% 93%;
+
+  --destructive: 0 62% 45%;
+  --destructive-foreground: 0 0% 100%;
+
+  --border: 215 20% 22%;
+  --input: 215 20% 22%;
+
+  --ring: 235 80% 65%;
+
+  --success: 142 65% 42%;
+  --warning: 38 85% 55%;
+  --info: 199 85% 55%;
+
+  --sidebar-bg: 225 25% 9%;
+  --sidebar-border: 225 20% 15%;
+  --sidebar-text: 215 15% 55%;
+  --sidebar-text-active: 0 0% 100%;
+  --sidebar-active-bg: 235 80% 60%;
 }
 
+/* ─────────────────────────────────────────
+   3. @theme inline — Tailwind v4 颜色映射
+
+   这是 Tailwind v4 的关键：通过 @theme inline 让
+   bg-primary / text-primary-foreground 等工具类
+   引用上方定义的 CSS 变量。
+
+   注意：@theme inline 与 @theme 的区别在于 inline 模式
+   下变量是"实时"从 CSS 变量读取的，支持主题切换。
+   ───────────────────────────────────────── */
+@theme inline {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+
+  --color-success: hsl(var(--success));
+  --color-success-foreground: hsl(var(--success-foreground));
+
+  --color-warning: hsl(var(--warning));
+  --color-warning-foreground: hsl(var(--warning-foreground));
+
+  --color-info: hsl(var(--info));
+  --color-info-foreground: hsl(var(--info-foreground));
+
+  --color-sidebar-bg: hsl(var(--sidebar-bg));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+
+  /* 圆角映射 */
+  --radius-sm: calc(var(--radius) * 0.5);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) * 1.5);
+  --radius-xl: calc(var(--radius) * 2);
+}
+
+/* ─────────────────────────────────────────
+   4. Base Layer — 全局默认样式
+   ───────────────────────────────────────── */
 @layer base {
   * {
     @apply border-border;
+    box-sizing: border-box;
   }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
   body {
     @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter",
+      "Helvetica Neue", Arial, sans-serif;
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* 统一滚动条样式 */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-border rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-muted-foreground/30;
+  }
+}
+
+/* ─────────────────────────────────────────
+   5. 侧边栏工具类（补充 Tailwind 未覆盖的部分）
+
+   侧边栏使用固定的深色背景，不随主题切换变化
+   （深色侧边栏在 light/dark 模式下均保持深色，
+   这是 Vercel/Linear 的做法）
+   ───────────────────────────────────────── */
+@layer components {
+  .sidebar {
+    background-color: hsl(var(--sidebar-bg));
+    border-right: 1px solid hsl(var(--sidebar-border));
+    color: hsl(var(--sidebar-text));
+  }
+
+  .sidebar-nav-item {
+    @apply flex items-center gap-3 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors duration-150;
+    color: hsl(var(--sidebar-text));
+  }
+
+  .sidebar-nav-item:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+    color: hsl(var(--sidebar-text-active));
+  }
+
+  .sidebar-nav-item.active {
+    background-color: hsl(var(--primary));
+    color: hsl(var(--sidebar-text-active));
+  }
+
+  .sidebar-nav-item.active:hover {
+    background-color: hsl(var(--primary) / 0.9);
+  }
+
+  /* 状态徽章 */
+  .badge-allowed {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    background-color: rgb(16 185 129 / 0.1);
+    color: rgb(5 150 105);
+    border: 1px solid rgb(16 185 129 / 0.2);
+  }
+
+  .dark .badge-allowed {
+    color: rgb(52 211 153);
+    background-color: rgb(16 185 129 / 0.12);
+    border-color: rgb(16 185 129 / 0.25);
+  }
+
+  .badge-blocked {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    background-color: rgb(239 68 68 / 0.1);
+    color: rgb(220 38 38);
+    border: 1px solid rgb(239 68 68 / 0.2);
+  }
+
+  .dark .badge-blocked {
+    color: rgb(252 165 165);
+    background-color: rgb(239 68 68 / 0.12);
+    border-color: rgb(239 68 68 / 0.25);
+  }
+
+  .badge-cached {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    background-color: rgb(14 165 233 / 0.1);
+    color: rgb(2 132 199);
+    border: 1px solid rgb(14 165 233 / 0.2);
+  }
+
+  .dark .badge-cached {
+    color: rgb(125 211 252);
+    background-color: rgb(14 165 233 / 0.12);
+    border-color: rgb(14 165 233 / 0.25);
+  }
+
+  .badge-rewrite {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+    background-color: rgb(139 92 246 / 0.1);
+    color: rgb(124 58 237);
+    border: 1px solid rgb(139 92 246 / 0.2);
+  }
+
+  .dark .badge-rewrite {
+    color: rgb(196 181 253);
+    background-color: rgb(139 92 246 / 0.12);
+    border-color: rgb(139 92 246 / 0.25);
+  }
+
+  /* 数据表格行 */
+  .data-table-row {
+    @apply border-b transition-colors;
+    border-color: hsl(var(--border) / 0.5);
+  }
+
+  .data-table-row:hover {
+    @apply bg-muted/30;
+  }
+
+  /* 统计卡片大数字 */
+  .stat-value {
+    @apply text-3xl font-bold tracking-tight;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Loading skeleton */
+  .skeleton {
+    @apply animate-pulse rounded-md bg-muted;
   }
 }

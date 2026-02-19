@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { dashboardApi } from '@/api';
 import { QueryTrendChart } from '@/components/dashboard/QueryTrendChart';
-import { Activity, Shield, Database, Clock, Server, Filter, Settings } from 'lucide-react';
+import { Activity, Shield, Database, Server, Filter, Settings } from 'lucide-react';
 
 export default function DashboardPage() {
   // Fetch dashboard stats
