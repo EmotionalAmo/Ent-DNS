@@ -78,8 +78,10 @@ interface CreateRewriteFormData {
 }
 
 function IpSelector({
+  value: _value,
   onChange,
 }: {
+  value?: string;
   onChange: (ip: string) => void;
 }) {
   return (

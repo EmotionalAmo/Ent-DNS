@@ -11,6 +11,10 @@ import DashboardPage from './pages/Dashboard';
 import RulesPage from './pages/Rules';
 import FiltersPage from './pages/Filters';
 import RewritesPage from './pages/Rewrites';
+import QueryLogsPage from './pages/QueryLogs';
+import ClientsPage from './pages/Clients';
+import UsersPage from './pages/Users';
+import SettingsPage from './pages/Settings';
 
 // Create Query Client
 const queryClient = new QueryClient({
@@ -106,7 +110,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<div className="p-8">Clients Page - Coming Soon</div>} />
+            <Route index element={<ClientsPage />} />
           </Route>
 
           <Route
@@ -119,7 +123,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<div className="p-8">Users Page - Coming Soon</div>} />
+            <Route index element={<UsersPage />} />
           </Route>
 
           <Route
@@ -132,7 +136,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<div className="p-8">Settings Page - Coming Soon</div>} />
+            <Route index element={<SettingsPage />} />
           </Route>
 
           <Route
@@ -145,7 +149,7 @@ function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<div className="p-8">Query Logs Page - Coming Soon</div>} />
+            <Route index element={<QueryLogsPage />} />
           </Route>
 
           {/* Catch all - redirect to dashboard */}
