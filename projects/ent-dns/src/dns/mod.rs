@@ -11,6 +11,7 @@ pub mod filter;
 pub mod rules;
 pub mod cache;
 pub mod acl;
+pub mod subscription;
 
 pub async fn serve(cfg: Config, db: DbPool, filter: Arc<FilterEngine>) -> Result<()> {
     tracing::info!("DNS server starting on {}:{}", cfg.dns.bind, cfg.dns.port);

@@ -9,3 +9,4 @@ pub mod settings;
 pub mod users;
 pub mod audit_log;
 pub mod metrics;
+pub mod rewrites;
