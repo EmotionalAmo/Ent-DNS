@@ -39,20 +39,23 @@ export const filtersApi = {
 
   /**
    * 刷新过滤列表（手动同步远程规则）
+   * 后端现在立即返回并在后台同步，syncing=true 表示同步已在后台启动
    */
-  async refreshFilter(id: string): Promise<{ rule_count: number; last_updated: string }> {
-    const response = await apiClient.post<{ rule_count: number; last_updated: string }>(`/api/v1/filters/${id}/refresh`);
+  async refreshFilter(id: string): Promise<{ rule_count?: number; last_updated?: string; syncing?: boolean; message?: string }> {
+    const response = await apiClient.post<{ rule_count?: number; last_updated?: string; syncing?: boolean; message?: string }>(`/api/v1/filters/${id}/refresh`);
     return response.data;
   },
 
   /**
    * 批量刷新所有过滤列表
+   * 返回是否有任何过滤器在后台同步
    */
-  async refreshAllFilters(filters: Filter[]): Promise<void> {
-    await Promise.all(
+  async refreshAllFilters(filters: Filter[]): Promise<{ anySyncing: boolean }> {
+    const results = await Promise.all(
       filters
         .filter(f => f.url && f.is_enabled)
         .map(f => this.refreshFilter(f.id))
     );
+    return { anySyncing: results.some(r => r.syncing) };
   },
 };

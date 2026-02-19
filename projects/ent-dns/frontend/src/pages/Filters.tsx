@@ -177,12 +177,23 @@ function CreateFilterDialog({
 
   const createMutation = useMutation({
     mutationFn: filtersApi.createFilter,
-    onSuccess: () => {
-      toast.success('过滤列表创建成功');
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['filters'] });
       onOpenChange(false);
       setFormData({ name: '', url: '', type: 'adguard', is_enabled: true });
       onSuccess();
+      if (data?.syncing) {
+        toast.success('过滤列表已创建，规则同步在后台进行，完成后自动刷新');
+        // Poll for completion: refresh list every 3s for up to 60s
+        let attempts = 0;
+        const timer = setInterval(() => {
+          attempts++;
+          queryClient.invalidateQueries({ queryKey: ['filters'] });
+          if (attempts >= 20) clearInterval(timer);
+        }, 3000);
+      } else {
+        toast.success('过滤列表创建成功');
+      }
     },
     onError: (error: any) => {
       toast.error(`创建失败: ${error.message || '未知错误'}`);
@@ -229,7 +240,7 @@ function CreateFilterDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[calc(100vw-2rem)] sm:max-w-lg max-h-[90vh] overflow-y-auto overflow-x-hidden">
         <DialogHeader>
           <DialogTitle>{filter ? '编辑过滤列表' : '添加过滤列表'}</DialogTitle>
           <DialogDescription>
@@ -428,9 +439,19 @@ export default function FiltersPage() {
   // 刷新单个过滤器
   const refreshMutation = useMutation({
     mutationFn: (id: string) => filtersApi.refreshFilter(id),
-    onSuccess: (data) => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['filters'] });
-      toast.success(`同步成功，共 ${data.rule_count} 条规则`);
+      if (data?.syncing) {
+        toast.success('规则同步已在后台启动，完成后自动刷新');
+        let attempts = 0;
+        const timer = setInterval(() => {
+          attempts++;
+          queryClient.invalidateQueries({ queryKey: ['filters'] });
+          if (attempts >= 20) clearInterval(timer);
+        }, 3000);
+      } else {
+        toast.success(`同步成功，共 ${data?.rule_count ?? 0} 条规则`);
+      }
     },
     onError: (error: any) => {
       toast.error(`同步失败: ${error.message || '未知错误'}`);
@@ -443,9 +464,19 @@ export default function FiltersPage() {
   // 刷新所有过滤器
   const refreshAllMutation = useMutation({
     mutationFn: () => filtersApi.refreshAllFilters(filters),
-    onSuccess: () => {
+    onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['filters'] });
-      toast.success('已刷新所有过滤器');
+      if (data?.anySyncing) {
+        toast.success('所有过滤器同步已在后台启动，完成后自动刷新');
+        let attempts = 0;
+        const timer = setInterval(() => {
+          attempts++;
+          queryClient.invalidateQueries({ queryKey: ['filters'] });
+          if (attempts >= 20) clearInterval(timer);
+        }, 3000);
+      } else {
+        toast.success('已刷新所有过滤器');
+      }
     },
     onError: (error: any) => {
       toast.error(`刷新失败: ${error.message || '未知错误'}`);

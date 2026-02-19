@@ -86,39 +86,36 @@ pub async fn create(
     .execute(&state.db)
     .await?;
 
-    // If URL provided, trigger initial sync (async, non-blocking)
-    let rule_count = if let Some(ref url) = body.url {
-        match crate::dns::subscription::sync_filter_list(&state.db, &id, url).await {
-            Ok(count) => count,
-            Err(e) => {
-                tracing::warn!("Failed to sync filter list {}: {}", id, e);
-                0
+    // If URL provided, spawn background sync so the HTTP response returns immediately.
+    // Large filter lists (AdGuard, 50k+ rules) can take minutes to fetch—do NOT block here.
+    let syncing = if let Some(ref url) = body.url {
+        let db = state.db.clone();
+        let filter_engine = state.filter.clone();
+        let filter_id = id.clone();
+        let url = url.clone();
+        tokio::spawn(async move {
+            match crate::dns::subscription::sync_filter_list(&db, &filter_id, &url).await {
+                Ok(n) => {
+                    tracing::info!("Background sync filter {}: {} rules", filter_id, n);
+                    let _ = filter_engine.reload().await;
+                }
+                Err(e) => tracing::warn!("Background sync filter {}: {}", filter_id, e),
             }
-        }
+        });
+        true
     } else {
-        0
+        false
     };
-
-    // Get updated last_updated
-    let last_updated: Option<String> = sqlx::query_scalar(
-        "SELECT last_updated FROM filter_lists WHERE id = ?"
-    )
-    .bind(&id)
-    .fetch_optional(&state.db)
-    .await?
-    .flatten();
-
-    // Hot-reload filter engine
-    state.filter.reload().await.map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(json!({
         "id": id,
         "name": name,
         "url": body.url,
         "is_enabled": body.is_enabled,
-        "rule_count": rule_count,
-        "last_updated": last_updated,
+        "rule_count": 0,
+        "last_updated": null,
         "created_at": now,
+        "syncing": syncing,
     })))
 }
 
@@ -215,29 +212,26 @@ pub async fn refresh(
         "Cannot refresh local filter list (no URL configured)".to_string()
     ))?;
 
-    // Sync the filter list
-    let rule_count = crate::dns::subscription::sync_filter_list(&state.db, &id, &url)
-        .await
-        .map_err(|e| AppError::Internal(format!("Failed to sync filter list: {}", e)))?;
-
-    // Hot-reload filter engine
-    state.filter.reload().await.map_err(|e| AppError::Internal(e.to_string()))?;
-
-    // Get updated last_updated
-    let last_updated: (Option<String>,) = sqlx::query_as(
-        "SELECT last_updated FROM filter_lists WHERE id = ?"
-    )
-    .bind(&id)
-    .fetch_one(&state.db)
-    .await?;
-
-    let last_updated = last_updated.0.unwrap_or_else(|| Utc::now().to_rfc3339());
+    // Spawn background sync — large remote lists can take >30s to fetch+insert.
+    // Return immediately so the browser doesn't time out.
+    let db = state.db.clone();
+    let filter_engine = state.filter.clone();
+    let filter_id = id.clone();
+    tokio::spawn(async move {
+        match crate::dns::subscription::sync_filter_list(&db, &filter_id, &url).await {
+            Ok(n) => {
+                tracing::info!("Background refresh filter {}: {} rules", filter_id, n);
+                let _ = filter_engine.reload().await;
+            }
+            Err(e) => tracing::warn!("Background refresh filter {}: {}", filter_id, e),
+        }
+    });
 
     Ok(Json(json!({
         "id": id,
         "name": name,
-        "rule_count": rule_count,
-        "last_updated": last_updated,
-        "success": true
+        "success": true,
+        "syncing": true,
+        "message": "同步已在后台启动，请稍后刷新查看结果"
     })))
 }
