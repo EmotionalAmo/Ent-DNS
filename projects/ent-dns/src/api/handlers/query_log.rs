@@ -1,5 +1,7 @@
 use axum::{
     extract::{State, Query},
+    response::IntoResponse,
+    http::header,
     Json,
 };
 use serde::Deserialize;
@@ -94,4 +96,66 @@ pub async fn list(
         "offset": params.offset,
         "limit": limit,
     })))
+}
+
+#[derive(Deserialize)]
+pub struct ExportParams {
+    #[serde(default = "default_export_format")]
+    format: String,
+}
+
+fn default_export_format() -> String {
+    "csv".to_string()
+}
+
+pub async fn export(
+    State(state): State<Arc<AppState>>,
+    _auth: AuthUser,
+    Query(params): Query<ExportParams>,
+) -> impl IntoResponse {
+    let rows: Vec<(i64, String, String, Option<String>, String, String, Option<String>, String, Option<String>, Option<i64>)> =
+        sqlx::query_as(
+            "SELECT id, time, client_ip, client_name, question, qtype, answer, status, reason, elapsed_ms
+             FROM query_log ORDER BY time DESC LIMIT 10000"
+        )
+        .fetch_all(&state.db)
+        .await
+        .unwrap_or_default();
+
+    match params.format.as_str() {
+        "json" => {
+            let data: Vec<Value> = rows.into_iter().map(|(id, time, client_ip, client_name, question, qtype, answer, status, reason, elapsed_ms)| {
+                json!({ "id": id, "time": time, "client_ip": client_ip, "client_name": client_name,
+                         "question": question, "qtype": qtype, "answer": answer, "status": status,
+                         "reason": reason, "elapsed_ms": elapsed_ms })
+            }).collect();
+            let body = serde_json::to_string_pretty(&data).unwrap_or_default();
+            (
+                [(header::CONTENT_TYPE, "application/json"),
+                 (header::CONTENT_DISPOSITION, "attachment; filename=\"query-logs.json\"")],
+                body,
+            ).into_response()
+        }
+        _ => {
+            // CSV format (default)
+            let mut csv = String::from("id,time,client_ip,client_name,question,qtype,answer,status,reason,elapsed_ms\n");
+            for (id, time, client_ip, client_name, question, qtype, answer, status, reason, elapsed_ms) in rows {
+                csv.push_str(&format!(
+                    "{},{},{},{},{},{},{},{},{},{}\n",
+                    id, time, client_ip,
+                    client_name.unwrap_or_default(),
+                    question, qtype,
+                    answer.unwrap_or_default(),
+                    status,
+                    reason.unwrap_or_default(),
+                    elapsed_ms.map(|v| v.to_string()).unwrap_or_default(),
+                ));
+            }
+            (
+                [(header::CONTENT_TYPE, "text/csv; charset=utf-8"),
+                 (header::CONTENT_DISPOSITION, "attachment; filename=\"query-logs.csv\"")],
+                csv,
+            ).into_response()
+        }
+    }
 }

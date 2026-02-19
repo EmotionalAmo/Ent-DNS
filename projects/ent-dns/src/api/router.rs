@@ -18,6 +18,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/api/v1/dashboard/query-trend", get(handlers::dashboard::get_query_trend))
         // Query log (protected)
         .route("/api/v1/query-log", get(handlers::query_log::list))
+        .route("/api/v1/query-log/export", get(handlers::query_log::export))
         // Filters (protected)
         .route("/api/v1/filters", get(handlers::filters::list).post(handlers::filters::create))
         .route("/api/v1/filters/{id}", put(handlers::filters::update).delete(handlers::filters::delete))

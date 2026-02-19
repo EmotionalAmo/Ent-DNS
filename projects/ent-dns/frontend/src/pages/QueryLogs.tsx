@@ -18,7 +18,7 @@ import { RefreshCw, CheckCircle2, XCircle, Globe, ChevronLeft, ChevronRight, Dow
 const PAGE_SIZE = 50;
 
 const STATUS_OPTIONS = [
-  { value: '' as const, label: '全部' },
+  { value: 'all' as const, label: '全部' },
   { value: 'blocked' as const, label: '已拦截' },
   { value: 'allowed' as const, label: '已允许' },
 ];
@@ -56,7 +56,7 @@ function formatTime(timeStr: string) {
 
 export default function QueryLogsPage() {
   const [domainFilter, setDomainFilter] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'blocked' | 'allowed' | ''>('');
+  const [statusFilter, setStatusFilter] = useState<'blocked' | 'allowed' | 'all'>('all');
   const [clientFilter, setClientFilter] = useState('');
   const [page, setPage] = useState(0);
   const [appliedFilters, setAppliedFilters] = useState<QueryLogListParams>({
@@ -82,7 +82,7 @@ export default function QueryLogsPage() {
       offset: page * PAGE_SIZE,
     };
     if (domainFilter) newFilters.domain = domainFilter;
-    if (statusFilter) newFilters.status = statusFilter;
+    if (statusFilter && statusFilter !== 'all') newFilters.status = statusFilter;
     if (clientFilter) newFilters.client = clientFilter;
     setAppliedFilters(newFilters);
   };
@@ -158,7 +158,7 @@ export default function QueryLogsPage() {
               </div>
               <div className="flex flex-col gap-1">
                 <label className="text-xs text-muted-foreground">状态</label>
-                <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as typeof statusFilter)}>
+                <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val as 'blocked' | 'allowed' | 'all')}>
                   <SelectTrigger className="h-9 w-32">
                     <SelectValue placeholder="状态" />
                   </SelectTrigger>
