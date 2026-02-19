@@ -1,87 +1,216 @@
 # Ent-DNS Enterprise
 
-企业级 DNS 过滤服务器，支持 AdGuard 规则语法、JWT 认证管理 API 和实时查询日志。
+企业级 DNS 过滤服务器，支持 AdGuard/hosts 规则、订阅列表、DNS 重写、实时查询日志和 Web 管理界面。
 
 ## 技术栈
 
-- **后端**：Rust · Axum 0.8 · hickory-resolver 0.24 · SQLite (sqlx)
-- **认证**：JWT (jsonwebtoken 9) · Argon2 密码哈希
-- **前端**：React · TypeScript · Vite · shadcn/ui（开发中）
+- **后端**：Rust · Axum 0.8 · hickory-resolver 0.24 · SQLite (sqlx) · tokio
+- **认证**：JWT (jsonwebtoken 9) · Argon2 密码哈希 · RBAC 角色控制
+- **前端**：React 18 · TypeScript · Vite · Tailwind CSS v4 · shadcn/ui
+- **协议**：DNS over UDP + TCP (RFC 1035) · WebSocket 实时推送
 
-## 核心功能
+## 功能状态
 
 | 功能 | 状态 |
 |------|------|
-| UDP DNS 服务器（AdGuard 规则过滤） | ✅ 完成 |
-| 白名单 / 拦截 / 子域名匹配 | ✅ 完成 |
-| JWT 登录认证 | ✅ 完成 |
-| 过滤规则 CRUD + 热重载 | ✅ 完成 |
-| 实时查询日志（分页/过滤） | ✅ 完成 |
-| Dashboard 统计（24h block rate） | ✅ 完成 |
-| 过滤列表订阅（远程 hosts/AdGuard） | 🚧 开发中 |
-| DNS Rewrites（本地域名覆盖） | 🚧 开发中 |
-| 前端管理 UI | 🚧 开发中 |
+| DNS UDP + TCP 服务器 | ✅ |
+| AdGuard / hosts 规则过滤 | ✅ |
+| 过滤列表订阅（远程 URL，后台同步） | ✅ |
+| DNS Rewrites（本地域名覆盖） | ✅ |
+| 自定义客户端上游 DNS（含 CIDR 匹配） | ✅ |
+| Web 管理界面（单端口，前后端合一） | ✅ |
+| JWT 登录 · RBAC 角色权限 | ✅ |
+| 实时查询日志（WebSocket） | ✅ |
+| Dashboard 趋势图 | ✅ |
+| Prometheus 指标 `/metrics` | ✅ |
+| 查询日志自动清理（可配置保留天数） | ✅ |
+| 过滤列表定时自动刷新 | ✅ |
+| Docker 一键部署 | ✅ |
+
+---
 
 ## 快速开始
 
-### 环境要求
+### 方式一：Docker Compose（推荐生产）
 
-- Rust 1.75+
-- SQLite
+```bash
+# 1. 克隆仓库
+git clone https://github.com/EmotionalAmo/Ent-DNS.git
+cd Ent-DNS/projects/ent-dns
 
-### 构建 & 运行
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env，至少修改 ENT_DNS__AUTH__JWT_SECRET：
+#   openssl rand -hex 32
+
+# 3. 启动
+docker compose up -d
+
+# 访问 Web UI：http://your-server:8080
+# 默认账号：admin / admin（首次登录强制改密）
+```
+
+**docker-compose.yml** 已内置：数据持久化卷、DNS 端口 53/UDP+TCP、管理 API 8080。
+
+---
+
+### 方式二：systemd 自动安装脚本
 
 ```bash
 cd projects/ent-dns
-cargo build
-
-# 开发环境（避免 macOS mDNS 占用 5353）
-ENT_DNS__DNS__PORT=15353 ENT_DNS__DATABASE__PATH=/tmp/ent-dns.db ./target/debug/ent-dns
+sudo bash install.sh
 ```
 
-### 测试 DNS 过滤
+脚本会自动：构建二进制 → 创建系统用户 → 安装 systemd service → 启动服务。
+
+---
+
+### 方式三：本地开发
+
+**前置要求**：Rust 1.75+、Node.js 18+
 
 ```bash
-# 添加拦截规则（需先登录获取 JWT token）
-curl -X POST http://localhost:8080/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"admin","password":"admin123"}'
+cd projects/ent-dns
 
-# 使用 token 添加规则
-curl -X POST http://localhost:8080/api/v1/rules \
-  -H 'Authorization: Bearer <TOKEN>' \
-  -H 'Content-Type: application/json' \
-  -d '{"rule":"||ads.example.com^","comment":"block ads"}'
+# 1. 构建前端
+cd frontend && npm install && npm run build && cd ..
 
-# 验证 DNS 拦截
-dig @127.0.0.1 -p 15353 ads.example.com
+# 2. 启动后端（前端 dist/ 由后端同端口 serve）
+ENT_DNS__DNS__PORT=15353 \
+ENT_DNS__DATABASE__PATH=/tmp/ent-dns-test.db \
+ENT_DNS__AUTH__JWT_SECRET=dev-local-secret-for-development-only \
+cargo run
+
+# 访问：http://localhost:8080
 ```
+
+**开发模式（热重载，推荐）**：
+
+```bash
+# 终端 1：后端
+ENT_DNS__DNS__PORT=15353 \
+ENT_DNS__DATABASE__PATH=/tmp/ent-dns-test.db \
+ENT_DNS__AUTH__JWT_SECRET=dev-local-secret-for-development-only \
+cargo run
+
+# 终端 2：前端（Vite 自动代理 /api/* 到后端 :8080）
+cd frontend && npm run dev
+
+# 访问：http://localhost:5173
+```
+
+---
+
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `ENT_DNS__DATABASE__PATH` | `./ent-dns.db` | SQLite 数据库路径 |
+| `ENT_DNS__DNS__BIND` | `0.0.0.0` | DNS 监听地址 |
+| `ENT_DNS__DNS__PORT` | `53` | DNS 端口（开发用 15353 避免 macOS 冲突） |
+| `ENT_DNS__API__BIND` | `0.0.0.0` | HTTP API 监听地址 |
+| `ENT_DNS__API__PORT` | `8080` | HTTP API 端口（同时 serve 前端） |
+| `ENT_DNS__AUTH__JWT_SECRET` | ❌ 必填 | JWT 签名密钥，≥32 字符，用 `openssl rand -hex 32` 生成 |
+| `ENT_DNS__AUTH__JWT_EXPIRY_HOURS` | `24` | Token 有效期（小时） |
+
+> **安全注意**：`JWT_SECRET` 使用默认值或长度 < 32 字符时，服务会拒绝启动。
+
+---
 
 ## 项目结构
 
 ```
 projects/ent-dns/
 ├── src/
-│   ├── main.rs          # 入口，启动 DNS + HTTP 服务
-│   ├── config.rs        # 配置（支持 ENV / TOML）
-│   ├── dns/             # DNS 引擎（UDP server + AdGuard parser + resolver）
-│   ├── api/             # Axum REST API（rules / filters / rewrites / logs）
-│   ├── auth/            # JWT + Argon2 认证
-│   ├── db/              # SQLite 数据访问层（sqlx）
-│   └── metrics.rs       # 统计指标
-├── frontend/            # React + Vite（开发中）
-└── deploy/              # 部署配置
+│   ├── main.rs              # 入口：启动 DNS + HTTP，后台定时任务
+│   ├── config.rs            # 配置（ENV / TOML 双支持）
+│   ├── dns/
+│   │   ├── server.rs        # UDP + TCP DNS 服务器（EDNS0 4096B）
+│   │   ├── handler.rs       # 请求处理：过滤 → 重写 → 缓存 → 解析
+│   │   ├── filter.rs        # FilterEngine（AdGuard/hosts 规则引擎）
+│   │   ├── resolver.rs      # 上游 DNS 解析器（含自定义 upstream）
+│   │   ├── cache.rs         # DNS 缓存
+│   │   └── subscription.rs  # 远程过滤列表同步
+│   ├── api/
+│   │   ├── router.rs        # 路由注册（含前端静态文件 fallback）
+│   │   ├── middleware/      # JWT 认证 · RBAC · 审计日志
+│   │   └── handlers/        # rules / filters / rewrites / clients /
+│   │                        # query_log / dashboard / users / ws / ...
+│   ├── db/                  # SQLite 迁移 · 连接池 · 审计写入
+│   ├── metrics.rs           # Prometheus AtomicU64 计数器
+│   └── error.rs             # 统一错误类型
+├── frontend/                # React + Vite（构建产物由后端 serve）
+│   ├── src/
+│   │   ├── pages/           # Dashboard / Rules / Filters / Rewrites /
+│   │   │                    # Clients / Upstreams / QueryLogs / Settings
+│   │   ├── api/             # axios client + 各模块 API 封装
+│   │   ├── hooks/           # useQueryLogWebSocket（实时日志）
+│   │   └── stores/          # Zustand 状态管理（auth）
+│   └── vite.config.ts       # 开发时 proxy /api/* → :8080
+├── Dockerfile               # 多阶段构建（前端 + 后端）
+├── docker-compose.yml       # 生产编排
+├── install.sh               # systemd 自动安装脚本
+└── .env.example             # 环境变量模板
 ```
+
+---
 
 ## API 一览
 
+### 认证
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/api/v1/auth/login` | POST | 登录，返回 JWT token |
-| `/api/v1/rules` | GET/POST/DELETE | 过滤规则管理 |
-| `/api/v1/query-log` | GET | 查询日志（分页/过滤） |
-| `/api/v1/stats` | GET | 24h 统计（total/blocked/block_rate） |
+| `/api/v1/auth/login` | POST | 登录，返回 JWT |
+| `/api/v1/auth/logout` | POST | 登出 |
+| `/api/v1/auth/change-password` | POST | 修改密码 |
 
-## AI 团队架构
+### 核心管理
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/rules` | GET/POST | 自定义规则（分页 + 搜索） |
+| `/api/v1/rules/{id}` | DELETE | 删除规则 |
+| `/api/v1/filters` | GET/POST | 过滤列表 |
+| `/api/v1/filters/{id}` | PUT/DELETE | 更新/删除 |
+| `/api/v1/filters/{id}/refresh` | POST | 手动同步远程列表 |
+| `/api/v1/rewrites` | GET/POST | DNS 重写规则 |
+| `/api/v1/rewrites/{id}` | PUT/DELETE | 更新/删除 |
+| `/api/v1/clients` | GET/POST | 客户端配置（含 CIDR） |
+| `/api/v1/clients/{id}` | PUT/DELETE | 更新/删除 |
 
-本项目由 14 个 AI Agent 协作构建（详见 `.claude/agents/`），基于各领域顶尖专家思维模型，包括工程、产品、设计、商业等层面的自主协作。
+### 监控 & 日志
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/dashboard/stats` | GET | 统计数据 |
+| `/api/v1/dashboard/query-trend` | GET | 查询趋势（?hours=N） |
+| `/api/v1/query-log` | GET | 查询日志（分页/过滤/导出） |
+| `/api/v1/ws/query-log?token=JWT` | WS | 实时查询日志推送 |
+| `/metrics` | GET | Prometheus 指标 |
+
+### 管理员
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/users` | GET/POST | 用户管理 |
+| `/api/v1/users/{id}/role` | PUT | 修改角色 |
+| `/api/v1/audit-log` | GET | 审计日志 |
+| `/api/v1/admin/backup` | GET | 数据库备份 |
+
+---
+
+## 默认账号
+
+| 用户名 | 密码 | 角色 |
+|--------|------|------|
+| `admin` | `admin` | super_admin |
+
+> 首次登录后系统会强制要求修改密码。
+
+---
+
+## 构建 Docker 镜像
+
+```bash
+cd projects/ent-dns
+docker build -t ent-dns:latest .
+```
+
+多阶段构建：Stage 1 编译前端（Node.js），Stage 2 编译 Rust 后端，Stage 3 最终镜像仅包含二进制和前端产物，体积最小化。
