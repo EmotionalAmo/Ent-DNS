@@ -5,6 +5,7 @@ use uuid::Uuid;
 use crate::config::Config;
 
 pub mod models;
+pub mod audit;
 
 pub type DbPool = SqlitePool;
 

@@ -7,6 +7,7 @@ use std::sync::Arc;
 use std::time::Instant;
 use crate::config::Config;
 use crate::db::DbPool;
+use crate::metrics::DnsMetrics;
 use super::{filter::FilterEngine, resolver::DnsResolver, cache::DnsCache};
 
 pub struct DnsHandler {
@@ -14,13 +15,14 @@ pub struct DnsHandler {
     resolver: Arc<DnsResolver>,
     cache: Arc<DnsCache>,
     db: DbPool,
+    metrics: Arc<DnsMetrics>,
 }
 
 impl DnsHandler {
-    pub async fn new(cfg: Config, db: DbPool, filter: Arc<FilterEngine>) -> Result<Self> {
+    pub async fn new(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>) -> Result<Self> {
         let resolver = Arc::new(DnsResolver::new(&cfg).await?);
         let cache = Arc::new(DnsCache::new());
-        Ok(Self { filter, resolver, cache, db })
+        Ok(Self { filter, resolver, cache, db, metrics })
     }
 
     pub async fn handle_udp(&self, data: Vec<u8>, client_ip: String) -> Result<Vec<u8>> {
@@ -53,6 +55,7 @@ impl DnsHandler {
             // Only respond if query type matches (A or AAAA)
             if matches!(qtype, RecordType::A | RecordType::AAAA) {
                 if let Ok(response) = self.rewrite_response(&request, &answer, qtype) {
+                    self.metrics.inc_allowed();
                     self.log_query(client_ip, &domain, &qtype_str, "allowed", Some("rewrite"), elapsed);
                     return Ok(response);
                 }
@@ -64,6 +67,7 @@ impl DnsHandler {
         if self.filter.is_blocked(&domain).await {
             tracing::debug!("Blocked: {}", domain);
             let elapsed = start.elapsed().as_millis() as i64;
+            self.metrics.inc_blocked();
             self.log_query(client_ip, &domain, &qtype_str, "blocked", Some("filter_rule"), elapsed);
             return self.nxdomain(&request);
         }
@@ -71,6 +75,7 @@ impl DnsHandler {
         // Check cache
         if let Some(cached) = self.cache.get(&domain, qtype).await {
             let elapsed = start.elapsed().as_millis() as i64;
+            self.metrics.inc_cached();
             self.log_query(client_ip, &domain, &qtype_str, "cached", None, elapsed);
             return Ok(cached);
         }
@@ -81,6 +86,7 @@ impl DnsHandler {
 
         // Cache and log
         self.cache.set(&domain, qtype, response.clone()).await;
+        self.metrics.inc_allowed();
         self.log_query(client_ip, &domain, &qtype_str, "allowed", None, elapsed);
 
         Ok(response)

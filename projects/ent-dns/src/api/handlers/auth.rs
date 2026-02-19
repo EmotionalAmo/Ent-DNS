@@ -1,4 +1,5 @@
 use axum::{extract::State, Json};
+use axum::http::HeaderMap;
 use serde::Deserialize;
 use serde_json::{json, Value};
 use std::sync::Arc;
@@ -13,6 +14,7 @@ pub struct LoginRequest {
 
 pub async fn login(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> AppResult<Json<Value>> {
     let row: Option<(String, String, String, i64)> = sqlx::query_as(
@@ -40,6 +42,23 @@ pub async fn login(
         state.jwt_expiry_hours,
     )
     .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    // Audit log: record successful login
+    let ip = headers
+        .get("x-forwarded-for")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    crate::db::audit::log_action(
+        state.db.clone(),
+        user_id.clone(),
+        req.username.clone(),
+        "login",
+        "session",
+        None,
+        None,
+        ip,
+    );
 
     Ok(Json(json!({
         "token": token,

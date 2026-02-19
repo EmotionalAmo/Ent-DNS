@@ -8,7 +8,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::api::middleware::auth::AuthUser;
+use crate::api::middleware::rbac::AdminUser;
 use crate::api::AppState;
 use crate::error::{AppError, AppResult};
 use crate::auth::password;
@@ -48,7 +48,7 @@ fn validate_role(role: &str) -> AppResult<()> {
 
 pub async fn list(
     State(state): State<Arc<AppState>>,
-    _auth: AuthUser,
+    _admin: AdminUser,
 ) -> AppResult<Json<Value>> {
     let rows: Vec<(String, String, String, i64, String, String)> = sqlx::query_as(
         "SELECT id, username, role, is_active, created_at, updated_at
@@ -76,7 +76,7 @@ pub async fn list(
 
 pub async fn create(
     State(state): State<Arc<AppState>>,
-    auth: AuthUser,
+    _admin: AdminUser,
     Json(body): Json<CreateUserRequest>,
 ) -> AppResult<Json<Value>> {
     // Validate role
@@ -131,7 +131,7 @@ pub async fn create(
 
 pub async fn update_role(
     State(state): State<Arc<AppState>>,
-    _auth: AuthUser,
+    _admin: AdminUser,
     Path(id): Path<String>,
     Json(body): Json<UpdateRoleRequest>,
 ) -> AppResult<Json<Value>> {

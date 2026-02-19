@@ -1,48 +1,32 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { dashboardApi } from '@/api';
-import { QueryTrendChart, type QueryTrendData } from '@/components/dashboard/QueryTrendChart';
+import { QueryTrendChart } from '@/components/dashboard/QueryTrendChart';
 import { Activity, Shield, Database, Clock, Server, Filter, Settings } from 'lucide-react';
-
-// Generate mock trend data (in production, this would come from API)
-function generateTrendData(): QueryTrendData[] {
-  const data: QueryTrendData[] = [];
-  const now = new Date();
-  for (let i = 23; i >= 0; i--) {
-    const hour = new Date(now.getTime() - i * 60 * 60 * 1000);
-    const queries = Math.floor(Math.random() * 1000) + 200;
-    const blocked = Math.floor(queries * (Math.random() * 0.1 + 0.05));
-    data.push({
-      time: hour.getHours().toString().padStart(2, '0') + ':00',
-      queries,
-      blocked,
-      allowed: queries - blocked,
-    });
-  }
-  return data;
-}
 
 export default function DashboardPage() {
   // Fetch dashboard stats
   const { data: stats, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard', 'stats'],
     queryFn: dashboardApi.getStats,
-    refetchInterval: 30000, // Refresh every 30 seconds
-    staleTime: 10000, // Consider data stale after 10 seconds
+    refetchInterval: 30000,
+    staleTime: 10000,
   });
 
-  // Generate mock trend data (replace with real API data when available)
-  const trendData = generateTrendData();
+  // Fetch trend chart data
+  const { data: trendData = [], isLoading: trendLoading } = useQuery({
+    queryKey: ['dashboard', 'query-trend'],
+    queryFn: () => dashboardApi.getQueryTrend(24),
+    refetchInterval: 60000,
+    staleTime: 30000,
+  });
 
-  // Calculate derived values
-  const totalQueries = stats?.totalQueries ?? 0;
-  const blockedQueries = stats?.blockedQueries ?? 0;
-  const cachedQueries = stats?.cached_queries ?? 0;
-  const avgLatency = stats?.avg_latency_ms ?? 0;
-  const activeRules = stats?.activeRules ?? 0;
-  const filterEngineRules = stats?.filter_engine_rules ?? 0;
-  const cacheTtl = stats?.cache_ttl ?? 300;
-  const dnsStatus = stats?.dns_status ?? 'running';
+  // Backend returns snake_case
+  const totalQueries = (stats as any)?.total_queries ?? 0;
+  const blockedQueries = (stats as any)?.blocked_queries ?? 0;
+  const cachedQueries = (stats as any)?.cached_queries ?? 0;
+  const filterRules = (stats as any)?.filter_rules ?? 0;
+  const filterLists = (stats as any)?.filter_lists ?? 0;
 
   // Format numbers
   const formatNumber = (num: number): string => {
@@ -51,19 +35,7 @@ export default function DashboardPage() {
     return num.toString();
   };
 
-  // Format latency
-  const formatLatency = (ms: number): string => {
-    if (ms < 1) return `${(ms * 1000).toFixed(1)}µs`;
-    if (ms >= 1000) return `${(ms / 1000).toFixed(2)}s`;
-    return `${ms.toFixed(1)}ms`;
-  };
-
-  // Format uptime
-  const formatUptime = (uptime: string): string => {
-    return uptime || '未知';
-  };
-
-  // Calculate block rate
+  // Calculate rates
   const blockRate = totalQueries > 0 ? ((blockedQueries / totalQueries) * 100).toFixed(1) : '0.0';
   const cacheHitRate = totalQueries > 0 ? ((cachedQueries / totalQueries) * 100).toFixed(1) : '0.0';
 
@@ -71,30 +43,26 @@ export default function DashboardPage() {
     {
       title: '总查询数',
       value: formatNumber(totalQueries),
-      subtitle: stats?.uptime ? `运行时间: ${formatUptime(stats.uptime)}` : '暂无数据',
+      subtitle: '过去 24 小时',
       icon: Activity,
-      trend: null,
     },
     {
       title: '拦截查询',
       value: formatNumber(blockedQueries),
       subtitle: `拦截率: ${blockRate}%`,
       icon: Shield,
-      trend: 'down' as const,
     },
     {
       title: '缓存命中',
       value: formatNumber(cachedQueries),
       subtitle: `命中率: ${cacheHitRate}%`,
       icon: Database,
-      trend: 'up' as const,
     },
     {
-      title: '平均延迟',
-      value: formatLatency(avgLatency),
-      subtitle: avgLatency > 0 ? '响应时间' : '暂无数据',
-      icon: Clock,
-      trend: null,
+      title: '过滤列表',
+      value: filterLists.toString(),
+      subtitle: `${filterRules} 条自定义规则`,
+      icon: Filter,
     },
   ];
 
@@ -134,7 +102,7 @@ export default function DashboardPage() {
               <CardDescription>最近 24 小时的 DNS 查询统计</CardDescription>
             </CardHeader>
             <CardContent>
-              <QueryTrendChart data={trendData} isLoading={isLoading} />
+              <QueryTrendChart data={trendData} isLoading={trendLoading} />
             </CardContent>
           </Card>
         </div>
@@ -153,59 +121,61 @@ export default function DashboardPage() {
                   <Server className="h-4 w-4 text-muted-foreground" />
                   <span className="text-sm">DNS 服务器</span>
                 </div>
-                {isLoading ? (
-                  <div className="h-5 w-16 animate-pulse bg-muted rounded" />
-                ) : dnsStatus === 'running' ? (
-                  <span className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
-                    <span className="h-2 w-2 rounded-full bg-green-500" />
-                    Running
-                  </span>
-                ) : (
-                  <span className="flex items-center gap-1.5 text-sm text-destructive">
-                    <span className="h-2 w-2 rounded-full bg-destructive" />
-                    {dnsStatus}
-                  </span>
-                )}
+                <span className="flex items-center gap-1.5 text-sm text-green-600 dark:text-green-400">
+                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                  Running
+                </span>
               </div>
 
-              {/* Filter Engine */}
+              {/* Filter Rules */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Filter className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">过滤引擎</span>
+                  <span className="text-sm">自定义规则</span>
                 </div>
                 {isLoading ? (
                   <div className="h-5 w-16 animate-pulse bg-muted rounded" />
                 ) : (
-                  <span className="text-sm font-medium">
-                    {activeRules} 规则
-                  </span>
+                  <span className="text-sm font-medium">{filterRules} 条</span>
                 )}
               </div>
 
-              {/* Cache TTL */}
+              {/* Filter Lists */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Settings className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">缓存 TTL</span>
+                  <span className="text-sm">过滤列表</span>
                 </div>
                 {isLoading ? (
                   <div className="h-5 w-16 animate-pulse bg-muted rounded" />
                 ) : (
-                  <span className="text-sm font-medium">{cacheTtl} 秒</span>
+                  <span className="text-sm font-medium">{filterLists} 个</span>
                 )}
               </div>
 
-              {/* Active Filter Lists */}
+              {/* Block Rate */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <Filter className="h-4 w-4 text-muted-foreground" />
-                  <span className="text-sm">过滤器规则</span>
+                  <Shield className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">拦截率</span>
                 </div>
                 {isLoading ? (
                   <div className="h-5 w-16 animate-pulse bg-muted rounded" />
                 ) : (
-                  <span className="text-sm font-medium">{filterEngineRules} 条</span>
+                  <span className="text-sm font-medium">{blockRate}%</span>
+                )}
+              </div>
+
+              {/* Queries in last hour */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-muted-foreground" />
+                  <span className="text-sm">缓存命中率</span>
+                </div>
+                {isLoading ? (
+                  <div className="h-5 w-16 animate-pulse bg-muted rounded" />
+                ) : (
+                  <span className="text-sm font-medium">{cacheHitRate}%</span>
                 )}
               </div>
 

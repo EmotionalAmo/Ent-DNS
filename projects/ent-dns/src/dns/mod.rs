@@ -2,6 +2,7 @@ use anyhow::Result;
 use std::sync::Arc;
 use crate::config::Config;
 use crate::db::DbPool;
+use crate::metrics::DnsMetrics;
 use filter::FilterEngine;
 
 pub mod server;
@@ -13,7 +14,7 @@ pub mod cache;
 pub mod acl;
 pub mod subscription;
 
-pub async fn serve(cfg: Config, db: DbPool, filter: Arc<FilterEngine>) -> Result<()> {
+pub async fn serve(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>) -> Result<()> {
     tracing::info!("DNS server starting on {}:{}", cfg.dns.bind, cfg.dns.port);
-    server::run(cfg, db, filter).await
+    server::run(cfg, db, filter, metrics).await
 }

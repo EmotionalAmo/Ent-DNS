@@ -12,6 +12,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/api/v1/auth/logout", post(handlers::auth::logout))
         // Dashboard (protected)
         .route("/api/v1/dashboard/stats", get(handlers::dashboard::get_stats))
+        .route("/api/v1/dashboard/query-trend", get(handlers::dashboard::get_query_trend))
         // Query log (protected)
         .route("/api/v1/query-log", get(handlers::query_log::list))
         // Filters (protected)

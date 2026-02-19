@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
-use crate::api::middleware::auth::AuthUser;
+use crate::api::middleware::rbac::AdminUser;
 use crate::api::AppState;
 use crate::error::{AppError, AppResult};
 
@@ -31,7 +31,7 @@ pub struct UpdateDnsSettingsRequest {
 /// Get current DNS settings
 pub async fn get_dns(
     State(state): State<Arc<AppState>>,
-    _auth: AuthUser,
+    _admin: AdminUser,
 ) -> AppResult<Json<Value>> {
     // Fetch settings from database
     let cache_ttl: (String,) = sqlx::query_as("SELECT value FROM settings WHERE key = 'dns_cache_ttl'")
@@ -86,7 +86,7 @@ pub async fn get_dns(
 /// Update DNS settings
 pub async fn update_dns(
     State(state): State<Arc<AppState>>,
-    _auth: AuthUser,
+    _admin: AdminUser,
     Json(body): Json<UpdateDnsSettingsRequest>,
 ) -> AppResult<Json<Value>> {
     // Update cache_ttl if provided

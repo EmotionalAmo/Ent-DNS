@@ -30,12 +30,15 @@ async fn main() -> Result<()> {
     // Seed initial admin user if none exist
     db::seed_admin(&db_pool, &cfg).await?;
 
+    // Shared DNS metrics between DNS server and API
+    let metrics = Arc::new(metrics::DnsMetrics::default());
+
     // FilterEngine shared between DNS engine and Management API
     let filter = Arc::new(dns::filter::FilterEngine::new(db_pool.clone()).await?);
 
     tokio::try_join!(
-        dns::serve(cfg.clone(), db_pool.clone(), filter.clone()),
-        api::serve(cfg.clone(), db_pool.clone(), filter.clone()),
+        dns::serve(cfg.clone(), db_pool.clone(), filter.clone(), metrics.clone()),
+        api::serve(cfg.clone(), db_pool.clone(), filter.clone(), metrics.clone()),
     )?;
 
     Ok(())

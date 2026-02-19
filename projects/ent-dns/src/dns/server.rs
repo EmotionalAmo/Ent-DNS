@@ -3,15 +3,16 @@ use tokio::net::UdpSocket;
 use std::sync::Arc;
 use crate::config::Config;
 use crate::db::DbPool;
+use crate::metrics::DnsMetrics;
 use super::filter::FilterEngine;
 use super::handler::DnsHandler;
 
-pub async fn run(cfg: Config, db: DbPool, filter: Arc<FilterEngine>) -> Result<()> {
+pub async fn run(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>) -> Result<()> {
     let bind_addr = format!("{}:{}", cfg.dns.bind, cfg.dns.port);
     let socket = UdpSocket::bind(&bind_addr).await?;
     tracing::info!("DNS UDP listening on {}", bind_addr);
 
-    let handler = Arc::new(DnsHandler::new(cfg, db, filter).await?);
+    let handler = Arc::new(DnsHandler::new(cfg, db, filter, metrics).await?);
     let socket = Arc::new(socket);
 
     loop {
