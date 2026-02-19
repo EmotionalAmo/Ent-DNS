@@ -1,35 +1,159 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useEffect } from 'react';
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { ToasterProvider } from './components/ui/sonner';
+import { ProtectedRoute } from './components/layout/ProtectedRoute';
+import { DashboardLayout } from './components/layout/DashboardLayout';
+import { useAuthStore } from './stores/authStore';
+import { setAuthStoreCallbacks } from './api/client';
+import LoginPage from './pages/Login';
+import DashboardPage from './pages/Dashboard';
+import RulesPage from './pages/Rules';
+import FiltersPage from './pages/Filters';
+import RewritesPage from './pages/Rewrites';
+
+// Create Query Client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 60 * 1000, // 1 minute
+      retry: 1,
+    },
+  },
+});
 
 function App() {
-  const [count, setCount] = useState(0)
+  const token = useAuthStore((state) => state.token);
+  const clearAuth = useAuthStore((state) => state.clearAuth);
+
+  // Initialize API client callbacks
+  useEffect(() => {
+    setAuthStoreCallbacks(
+      () => token,
+      clearAuth
+    );
+  }, [token, clearAuth]);
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <QueryClientProvider client={queryClient}>
+      <ToasterProvider />
+      <BrowserRouter>
+        <Routes>
+          {/* Public Routes */}
+          <Route path="/login" element={<LoginPage />} />
+
+          {/* Protected Routes with Layout */}
+          <Route
+            path="/"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout title="Dashboard">
+                  <Outlet />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<DashboardPage />} />
+          </Route>
+
+          {/* Other protected routes with layout */}
+          <Route
+            path="/rules"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout title="Rules">
+                  <Outlet />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<RulesPage />} />
+          </Route>
+
+          <Route
+            path="/filters"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout title="Filters">
+                  <Outlet />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<FiltersPage />} />
+          </Route>
+
+          <Route
+            path="/rewrites"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout title="Rewrites">
+                  <Outlet />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<RewritesPage />} />
+          </Route>
+
+          <Route
+            path="/clients"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout title="Clients">
+                  <Outlet />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<div className="p-8">Clients Page - Coming Soon</div>} />
+          </Route>
+
+          <Route
+            path="/users"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout title="Users">
+                  <Outlet />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<div className="p-8">Users Page - Coming Soon</div>} />
+          </Route>
+
+          <Route
+            path="/settings"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout title="Settings">
+                  <Outlet />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<div className="p-8">Settings Page - Coming Soon</div>} />
+          </Route>
+
+          <Route
+            path="/logs"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout title="Query Log">
+                  <Outlet />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<div className="p-8">Query Logs Page - Coming Soon</div>} />
+          </Route>
+
+          {/* Catch all - redirect to dashboard */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </QueryClientProvider>
+  );
 }
 
-export default App
+export default App;
