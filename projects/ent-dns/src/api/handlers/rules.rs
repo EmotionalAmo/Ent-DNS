@@ -1,5 +1,5 @@
 use axum::{
-    extract::{State, Path},
+    extract::{State, Path, Query},
     Json,
 };
 use serde::Deserialize;
@@ -18,16 +18,66 @@ pub struct CreateRuleRequest {
     comment: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct ListParams {
+    page: Option<u32>,
+    per_page: Option<u32>,
+    search: Option<String>,
+}
+
 pub async fn list(
     State(state): State<Arc<AppState>>,
+    Query(params): Query<ListParams>,
     _auth: AuthUser,
 ) -> AppResult<Json<Value>> {
-    let rows: Vec<(String, String, Option<String>, i64, String, String)> = sqlx::query_as(
-        "SELECT id, rule, comment, is_enabled, created_by, created_at
-         FROM custom_rules ORDER BY created_at DESC"
-    )
-    .fetch_all(&state.db)
-    .await?;
+    let page = params.page.unwrap_or(1).max(1);
+    let per_page = params.per_page.unwrap_or(50).min(200) as i64;
+    let offset = ((page as i64 - 1) * per_page) as i64;
+    let search = params.search.as_deref().unwrap_or("").trim().to_string();
+    let has_search = !search.is_empty();
+    let search_pattern = format!("%{}%", search);
+
+    // 只显示用户手动创建的规则，过滤掉订阅列表导入的规则（created_by LIKE 'filter:%'）
+    let where_clause = if has_search {
+        "WHERE created_by NOT LIKE 'filter:%' AND (rule LIKE ? OR comment LIKE ?)"
+    } else {
+        "WHERE created_by NOT LIKE 'filter:%'"
+    };
+
+    let count_sql = format!("SELECT COUNT(*) FROM custom_rules {}", where_clause);
+    let data_sql = format!(
+        "SELECT id, rule, comment, is_enabled, created_by, created_at \
+         FROM custom_rules {} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+        where_clause
+    );
+
+    let total: i64 = if has_search {
+        sqlx::query_scalar(&count_sql)
+            .bind(&search_pattern)
+            .bind(&search_pattern)
+            .fetch_one(&state.db)
+            .await?
+    } else {
+        sqlx::query_scalar(&count_sql)
+            .fetch_one(&state.db)
+            .await?
+    };
+
+    let rows: Vec<(String, String, Option<String>, i64, String, String)> = if has_search {
+        sqlx::query_as(&data_sql)
+            .bind(&search_pattern)
+            .bind(&search_pattern)
+            .bind(per_page)
+            .bind(offset)
+            .fetch_all(&state.db)
+            .await?
+    } else {
+        sqlx::query_as(&data_sql)
+            .bind(per_page)
+            .bind(offset)
+            .fetch_all(&state.db)
+            .await?
+    };
 
     let data: Vec<Value> = rows
         .into_iter()
@@ -42,8 +92,13 @@ pub async fn list(
             })
         })
         .collect();
-    let count = data.len();
-    Ok(Json(json!({ "data": data, "total": count })))
+
+    Ok(Json(json!({
+        "data": data,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    })))
 }
 
 pub async fn create(
@@ -71,7 +126,6 @@ pub async fn create(
     .execute(&state.db)
     .await?;
 
-    // Hot-reload the filter engine so the new rule takes effect immediately.
     state.filter.reload().await.map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(json!({
@@ -98,7 +152,6 @@ pub async fn delete(
         return Err(AppError::NotFound(format!("Rule {} not found", id)));
     }
 
-    // Hot-reload so the deleted rule stops blocking immediately.
     state.filter.reload().await.map_err(|e| AppError::Internal(e.to_string()))?;
 
     Ok(Json(json!({"success": true})))

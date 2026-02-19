@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { rulesApi } from '@/api';
 import type { Rule } from '@/api/types';
@@ -48,12 +48,12 @@ import {
   XCircle,
   CheckCircle2,
   Download,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 
-/**
- * 从 AdGuard 规则字符串推断类型
- * @@ 开头 → 允许 (whitelist)，否则 → 阻断 (block)
- */
+const PER_PAGE = 50;
+
 function inferRuleType(rule: string): 'block' | 'allow' {
   return rule.trim().startsWith('@@') ? 'allow' : 'block';
 }
@@ -221,6 +221,8 @@ function DeleteConfirmDialog({
 export default function RulesPage() {
   const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showExamples, setShowExamples] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
@@ -228,15 +230,24 @@ export default function RulesPage() {
   const [exportFormat, setExportFormat] = useState<'csv' | 'json'>('csv');
   const [isExporting, setIsExporting] = useState(false);
 
-  const { data: rules = [], isLoading, error, refetch } = useQuery<Rule[]>({
-    queryKey: ['rules'],
-    queryFn: rulesApi.listRules,
+  // 搜索防抖：300ms 后触发，同时重置页码
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const { data, isLoading, error, refetch } = useQuery({
+    queryKey: ['rules', page, debouncedSearch],
+    queryFn: () => rulesApi.listRules({ page, per_page: PER_PAGE, search: debouncedSearch || undefined }),
+    placeholderData: (prev) => prev, // 翻页时保留旧数据避免闪烁
   });
 
-  const filteredRules = rules.filter((rule) =>
-    rule.rule.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (rule.comment ?? '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const rules = data?.data ?? [];
+  const total = data?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
 
   const deleteMutation = useMutation({
     mutationFn: rulesApi.deleteRules,
@@ -251,10 +262,10 @@ export default function RulesPage() {
   });
 
   const handleSelectAll = () => {
-    if (selectedIds.size === filteredRules.length) {
+    if (selectedIds.size === rules.length) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(filteredRules.map(r => r.id)));
+      setSelectedIds(new Set(rules.map((r: Rule) => r.id)));
     }
   };
 
@@ -291,7 +302,7 @@ export default function RulesPage() {
       URL.revokeObjectURL(url);
     } catch (error: any) {
       console.error('Export failed:', error);
-      alert('导出失败，请重试');
+      toast.error('导出失败，请重试');
     } finally {
       setIsExporting(false);
     }
@@ -353,13 +364,14 @@ export default function RulesPage() {
             <div>
               <CardTitle>规则列表</CardTitle>
               <CardDescription>
-                共 {rules.length} 条规则{searchQuery && ` (${filteredRules.length} 匹配)`}
+                共 {total} 条自定义规则
+                {debouncedSearch && `（搜索：${debouncedSearch}）`}
               </CardDescription>
             </div>
           </div>
         </CardHeader>
-        <CardContent>
-          {isLoading ? (
+        <CardContent className="p-0">
+          {isLoading && rules.length === 0 ? (
             <div className="flex items-center justify-center py-12">
               <RefreshCw size={32} className="animate-spin text-muted-foreground" />
             </div>
@@ -371,17 +383,17 @@ export default function RulesPage() {
                 <Button variant="outline" onClick={() => refetch()}>重试</Button>
               </div>
             </div>
-          ) : filteredRules.length === 0 ? (
+          ) : rules.length === 0 ? (
             <div className="flex items-center justify-center py-12 text-center">
               <div className="space-y-4 max-w-md">
                 <Shield size={48} className="mx-auto text-muted-foreground" />
                 <div>
                   <p className="text-lg font-medium">暂无规则</p>
                   <p className="text-muted-foreground">
-                    {searchQuery ? '没有找到匹配的规则' : '点击添加按钮创建第一条 DNS 规则'}
+                    {debouncedSearch ? '没有找到匹配的规则' : '点击添加按钮创建第一条 DNS 规则'}
                   </p>
                 </div>
-                {!searchQuery && (
+                {!debouncedSearch && (
                   <Button onClick={() => setCreateDialogOpen(true)}>
                     <Plus size={16} className="mr-1" />添加规则
                   </Button>
@@ -389,79 +401,122 @@ export default function RulesPage() {
               </div>
             </div>
           ) : (
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-12">
-                      <Checkbox
-                        checked={selectedIds.size === filteredRules.length && filteredRules.length > 0}
-                        onCheckedChange={handleSelectAll}
-                        aria-label="全选"
-                      />
-                    </TableHead>
-                    <TableHead>规则</TableHead>
-                    <TableHead>类型</TableHead>
-                    <TableHead>备注</TableHead>
-                    <TableHead>创建时间</TableHead>
-                    <TableHead className="w-20">操作</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredRules.map((rule) => {
-                    const ruleType = inferRuleType(rule.rule);
-                    return (
-                      <TableRow
-                        key={rule.id}
-                        className={selectedIds.has(rule.id) ? 'bg-primary/10' : ''}
-                      >
-                        <TableCell>
-                          <Checkbox
-                            checked={selectedIds.has(rule.id)}
-                            onCheckedChange={() => handleSelectRule(rule.id)}
-                          />
-                        </TableCell>
-                        <TableCell>
-                          <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
-                            {rule.rule}
-                          </code>
-                        </TableCell>
-                        <TableCell>
-                          {ruleType === 'allow' ? (
-                            <Badge variant="outline" className="text-green-600 border-green-300">
-                              <CheckCircle2 size={12} className="mr-1" />允许
-                            </Badge>
-                          ) : (
-                            <Badge variant="outline" className="text-red-600 border-red-300">
-                              <XCircle size={12} className="mr-1" />阻断
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {rule.comment || '-'}
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {formatDate(rule.created_at)}
-                        </TableCell>
-                        <TableCell>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                            onClick={() => {
-                              setSelectedIds(new Set([rule.id]));
-                              setDeleteDialogOpen(true);
-                            }}
-                          >
-                            <Trash2 size={14} />
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </div>
+            <>
+              <div className="rounded-md border mx-6">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12">
+                        <Checkbox
+                          checked={selectedIds.size === rules.length && rules.length > 0}
+                          onCheckedChange={handleSelectAll}
+                          aria-label="全选"
+                        />
+                      </TableHead>
+                      <TableHead>规则</TableHead>
+                      <TableHead>类型</TableHead>
+                      <TableHead>备注</TableHead>
+                      <TableHead>创建时间</TableHead>
+                      <TableHead className="w-20">操作</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {rules.map((rule: Rule) => {
+                      const ruleType = inferRuleType(rule.rule);
+                      return (
+                        <TableRow
+                          key={rule.id}
+                          className={selectedIds.has(rule.id) ? 'bg-primary/10' : ''}
+                        >
+                          <TableCell>
+                            <Checkbox
+                              checked={selectedIds.has(rule.id)}
+                              onCheckedChange={() => handleSelectRule(rule.id)}
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <code className="text-sm font-mono bg-muted px-2 py-1 rounded">
+                              {rule.rule}
+                            </code>
+                          </TableCell>
+                          <TableCell>
+                            {ruleType === 'allow' ? (
+                              <Badge variant="outline" className="text-green-600 border-green-300">
+                                <CheckCircle2 size={12} className="mr-1" />允许
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-red-600 border-red-300">
+                                <XCircle size={12} className="mr-1" />阻断
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {rule.comment || '-'}
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {formatDate(rule.created_at)}
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              onClick={() => {
+                                setSelectedIds(new Set([rule.id]));
+                                setDeleteDialogOpen(true);
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </div>
+
+              {/* 分页控件 */}
+              <div className="flex items-center justify-between px-6 py-4">
+                <p className="text-sm text-muted-foreground">
+                  第 {page} / {totalPages} 页，每页 {PER_PAGE} 条，共 {total} 条
+                </p>
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(1)}
+                    disabled={page <= 1 || isLoading}
+                  >
+                    首页
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => p - 1)}
+                    disabled={page <= 1 || isLoading}
+                  >
+                    <ChevronLeft size={16} />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(p => p + 1)}
+                    disabled={page >= totalPages || isLoading}
+                  >
+                    <ChevronRight size={16} />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setPage(totalPages)}
+                    disabled={page >= totalPages || isLoading}
+                  >
+                    末页
+                  </Button>
+                </div>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
