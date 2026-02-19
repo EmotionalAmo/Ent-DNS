@@ -10,8 +10,8 @@ export const filtersApi = {
    * 获取所有过滤列表
    */
   async listFilters(): Promise<Filter[]> {
-    const response = await apiClient.get<Filter[]>('/api/v1/filters');
-    return response.data;
+    const response = await apiClient.get<{ data: Filter[]; total: number }>('/api/v1/filters');
+    return response.data.data;
   },
 
   /**
@@ -51,7 +51,7 @@ export const filtersApi = {
   async refreshAllFilters(filters: Filter[]): Promise<void> {
     await Promise.all(
       filters
-        .filter(f => f.url && f.enabled)
+        .filter(f => f.url && f.is_enabled)
         .map(f => this.refreshFilter(f.id))
     );
   },

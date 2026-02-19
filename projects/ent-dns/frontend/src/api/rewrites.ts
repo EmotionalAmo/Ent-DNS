@@ -10,8 +10,8 @@ export const rewritesApi = {
    * 获取所有 DNS 重写规则
    */
   async listRewrites(): Promise<Rewrite[]> {
-    const response = await apiClient.get<Rewrite[]>('/api/v1/rewrites');
-    return response.data;
+    const response = await apiClient.get<{ data: Rewrite[]; total: number }>('/api/v1/rewrites');
+    return response.data.data;
   },
 
   /**

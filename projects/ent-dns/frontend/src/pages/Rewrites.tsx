@@ -11,7 +11,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -73,8 +72,7 @@ const COMMON_REWRITES = [
 
 interface CreateRewriteFormData {
   domain: string;
-  target: string;
-  enabled: boolean;
+  answer: string;
 }
 
 function IpSelector({
@@ -145,8 +143,7 @@ function CreateRewriteDialog({
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<CreateRewriteFormData>({
     domain: rewrite?.domain || '',
-    target: rewrite?.target || '',
-    enabled: rewrite?.enabled ?? true,
+    answer: rewrite?.answer || '',
   });
   const [copied, setCopied] = useState(false);
 
@@ -156,7 +153,7 @@ function CreateRewriteDialog({
       toast.success('重写规则创建成功');
       queryClient.invalidateQueries({ queryKey: ['rewrites'] });
       onOpenChange(false);
-      setFormData({ domain: '', target: '', enabled: true });
+      setFormData({ domain: '', answer: '' });
       onSuccess();
     },
     onError: (error: any) => {
@@ -171,7 +168,7 @@ function CreateRewriteDialog({
       toast.success('重写规则更新成功');
       queryClient.invalidateQueries({ queryKey: ['rewrites'] });
       onOpenChange(false);
-      setFormData({ domain: '', target: '', enabled: true });
+      setFormData({ domain: '', answer: '' });
       onSuccess();
     },
     onError: (error: any) => {
@@ -185,14 +182,14 @@ function CreateRewriteDialog({
       toast.error('请输入域名');
       return;
     }
-    if (!formData.target.trim()) {
+    if (!formData.answer.trim()) {
       toast.error('请输入目标 IP 地址');
       return;
     }
 
     // 验证 IP 格式（简单验证）
     const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$|^([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}$/;
-    if (!ipRegex.test(formData.target)) {
+    if (!ipRegex.test(formData.answer)) {
       toast.error('请输入有效的 IP 地址');
       return;
     }
@@ -205,7 +202,7 @@ function CreateRewriteDialog({
   };
 
   const handleSelectCommonRewrite = (item: { domain: string; ip: string }) => {
-    setFormData({ domain: item.domain, target: item.ip, enabled: true });
+    setFormData({ domain: item.domain, answer: item.ip });
   };
 
   const handleCopyToClipboard = () => {
@@ -260,14 +257,14 @@ function CreateRewriteDialog({
             <div className="space-y-2">
               <Label htmlFor="target">目标 IP 地址 *</Label>
               <IpSelector
-                value={formData.target}
-                onChange={(ip) => setFormData({ ...formData, target: ip })}
+                value={formData.answer}
+                onChange={(ip) => setFormData({ ...formData, answer: ip })}
               />
               <Input
                 id="target"
                 type="text"
-                value={formData.target}
-                onChange={(e) => setFormData({ ...formData, target: e.target.value })}
+                value={formData.answer}
+                onChange={(e) => setFormData({ ...formData, answer: e.target.value })}
                 placeholder="例如: 127.0.0.1"
                 className="font-mono"
               />
@@ -277,18 +274,7 @@ function CreateRewriteDialog({
             </div>
 
             {/* 启用状态 */}
-            <div className="flex items-center justify-between">
-              <div className="space-y-0.5">
-                <Label>启用重写规则</Label>
-                <p className="text-xs text-muted-foreground">
-                  启用后将应用此映射
-                </p>
-              </div>
-              <Switch
-                checked={formData.enabled}
-                onCheckedChange={(checked) => setFormData({ ...formData, enabled: checked })}
-              />
-            </div>
+            {/* 重写规则创建后立即生效 */}
 
             {/* 帮助提示 */}
             <div className="rounded-md bg-blue-50 dark:bg-blue-950 p-3">
@@ -391,21 +377,8 @@ export default function RewritesPage() {
   // 过滤重写规则
   const filteredRewrites = rewrites.filter((rewrite) =>
     rewrite.domain.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    rewrite.target.toLowerCase().includes(searchQuery.toLowerCase())
+    rewrite.answer.toLowerCase().includes(searchQuery.toLowerCase())
   );
-
-  // 切换重写规则启用状态
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      rewritesApi.updateRewrite(id, { enabled }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rewrites'] });
-      toast.success('重写规则状态已更新');
-    },
-    onError: (error: any) => {
-      toast.error(`更新失败: ${error.message || '未知错误'}`);
-    },
-  });
 
   // 删除重写规则
   const deleteMutation = useMutation({
@@ -467,8 +440,8 @@ export default function RewritesPage() {
   };
 
   // 计算统计
-  const enabledRewrites = rewrites.filter(r => r.enabled).length;
-  const localIps = rewrites.filter(r => r.target.startsWith('192.168.') || r.target.startsWith('10.') || r.target.startsWith('127.')).length;
+  const enabledRewrites = rewrites.length;
+  const localIps = rewrites.filter(r => r.answer.startsWith('192.168.') || r.answer.startsWith('10.') || r.answer.startsWith('127.')).length;
   const customIps = rewrites.length - localIps;
 
   return (
@@ -617,9 +590,9 @@ export default function RewritesPage() {
                 <TableBody>
                   {filteredRewrites.map((rewrite) => {
                     const isLocalIp =
-                      rewrite.target.startsWith('192.168.') ||
-                      rewrite.target.startsWith('10.') ||
-                      rewrite.target.startsWith('127.');
+                      rewrite.answer.startsWith('192.168.') ||
+                      rewrite.answer.startsWith('10.') ||
+                      rewrite.answer.startsWith('127.');
 
                     return (
                       <TableRow
@@ -650,7 +623,7 @@ export default function RewritesPage() {
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <code className="text-sm font-mono bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
-                              {rewrite.target}
+                              {rewrite.answer}
                             </code>
                             {isLocalIp && (
                               <span title="局域网地址">
@@ -658,15 +631,6 @@ export default function RewritesPage() {
                               </span>
                             )}
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <Switch
-                            checked={rewrite.enabled}
-                            onCheckedChange={(checked) =>
-                              toggleMutation.mutate({ id: rewrite.id, enabled: checked })
-                            }
-                            disabled={toggleMutation.isPending}
-                          />
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           <div className="flex items-center gap-1">

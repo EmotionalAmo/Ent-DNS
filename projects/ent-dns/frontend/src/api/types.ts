@@ -24,56 +24,51 @@ export interface DashboardStats {
   uptime: string;
 }
 
-// Rules Types
+// Rules Types — matches backend: {id, rule, comment, is_enabled, created_by, created_at}
 export interface Rule {
   id: string;
-  domain: string;
-  type: 'block' | 'allow' | 'blocklist' | 'whitelist';
-  enabled: boolean;
+  rule: string;
+  comment?: string | null;
+  is_enabled: boolean;
+  created_by: string;
   created_at: string;
-  updated_at: string;
 }
 
 export interface CreateRuleRequest {
-  domain: string;
-  type: 'block' | 'allow' | 'blocklist' | 'whitelist';
-  enabled?: boolean;
+  rule: string;
+  comment?: string;
 }
 
-// Filter Lists Types
+// Filter Lists Types — matches backend: {id, name, url, is_enabled, rule_count, last_updated, created_at}
 export interface Filter {
   id: string;
   name: string;
-  url?: string;
-  type: 'hosts' | 'adguard';
-  enabled: boolean;
-  last_updated?: string;
-  rule_count?: number;
+  url?: string | null;
+  is_enabled: boolean;
+  rule_count?: number | null;
+  last_updated?: string | null;
   created_at: string;
-  updated_at: string;
 }
 
 export interface CreateFilterRequest {
   name: string;
   url?: string;
-  type: 'hosts' | 'adguard';
-  enabled?: boolean;
+  is_enabled?: boolean;
 }
 
-// DNS Rewrites Types
+// DNS Rewrites Types — matches backend: {id, domain, answer, created_by, created_at}
 export interface Rewrite {
   id: string;
   domain: string;
-  target: string;
-  enabled: boolean;
+  answer: string;
+  created_by: string;
   created_at: string;
-  updated_at: string;
 }
 
 export interface CreateRewriteRequest {
   domain: string;
-  target: string;
-  enabled?: boolean;
+  answer: string;
+  ttl?: number;
 }
 
 // Query Log Types

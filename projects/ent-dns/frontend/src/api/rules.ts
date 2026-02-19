@@ -10,8 +10,8 @@ export const rulesApi = {
    * 获取所有规则
    */
   async listRules(): Promise<Rule[]> {
-    const response = await apiClient.get<Rule[]>('/api/v1/rules');
-    return response.data;
+    const response = await apiClient.get<{ data: Rule[]; total: number }>('/api/v1/rules');
+    return response.data.data;
   },
 
   /**
@@ -19,14 +19,6 @@ export const rulesApi = {
    */
   async createRule(request: CreateRuleRequest): Promise<Rule> {
     const response = await apiClient.post<Rule>('/api/v1/rules', request);
-    return response.data;
-  },
-
-  /**
-   * 更新规则
-   */
-  async updateRule(id: string, request: CreateRuleRequest): Promise<Rule> {
-    const response = await apiClient.put<Rule>(`/api/v1/rules/${id}`, request);
     return response.data;
   },
 

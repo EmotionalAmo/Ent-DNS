@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { rulesApi } from '@/api';
+import type { Rule } from '@/api/types';
 import { toast } from 'sonner';
 import {
   Table,
@@ -11,7 +12,6 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
-import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
@@ -32,217 +32,131 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
 import {
   Plus,
   Trash2,
-  Edit2,
   ChevronDown,
   ChevronUp,
   RefreshCw,
   Info,
   Shield,
-  CheckCircle2,
   XCircle,
+  CheckCircle2,
 } from 'lucide-react';
 
 /**
- * Rules 页面
- * 管理 DNS 阻断/允许规则
+ * 从 AdGuard 规则字符串推断类型
+ * @@ 开头 → 允许 (whitelist)，否则 → 阻断 (block)
  */
+function inferRuleType(rule: string): 'block' | 'allow' {
+  return rule.trim().startsWith('@@') ? 'allow' : 'block';
+}
 
-// 规则类型选项
-const RULE_TYPES = [
-  { value: 'block', label: '阻断 (Block)', color: 'text-red-600', icon: XCircle },
-  { value: 'allow', label: '允许 (Allow)', color: 'text-green-600', icon: CheckCircle2 },
-  { value: 'blocklist', label: '黑名单 (Blocklist)', color: 'text-red-600', icon: XCircle },
-  { value: 'whitelist', label: '白名单 (Whitelist)', color: 'text-green-600', icon: CheckCircle2 },
-] as const;
-
-// 规则示例
 const RULE_EXAMPLES = [
   {
     category: '基本域名阻断',
     examples: [
       '||example.com^ - 阻断 example.com 及其子域名',
       '||ads.example.com^ - 阻断特定子域名',
-      '||*.example.com^ - 阻断所有子域名',
     ],
   },
   {
-    category: '通配符匹配',
+    category: '白名单（允许）',
     examples: [
-      '*://*.ads.* - 阻断所有包含 ads 的域名',
-      '*://*analytics* - 阻断包含 analytics 的域名',
+      '@@||example.com^ - 允许 example.com（优先于阻断规则）',
     ],
   },
   {
-    category: '路径阻断',
+    category: 'hosts 格式',
     examples: [
-      '||example.com/ads/* - 阻断 example.com 的 /ads/ 路径',
-      '||example.com/*script*.js - 阻断特定脚本',
-    ],
-  },
-  {
-    category: '元素隐藏',
-    examples: [
-      'example.com##.ads - 隐藏元素选择器',
-      'example.com##div.ad-banner - 隐藏广告横幅',
+      '0.0.0.0 example.com - hosts 格式阻断',
     ],
   },
 ];
 
 interface CreateRuleFormData {
-  domain: string;
-  type: 'block' | 'allow' | 'blocklist' | 'whitelist';
-}
-
-function RuleTypeSelector({
-  value,
-  onChange,
-}: {
-  value: CreateRuleFormData['type'];
-  onChange: (type: CreateRuleFormData['type']) => void;
-}) {
-  return (
-    <div className="grid grid-cols-2 gap-2">
-      {RULE_TYPES.map((type) => {
-        const Icon = type.icon;
-        const isSelected = value === type.value;
-        return (
-          <button
-            key={type.value}
-            type="button"
-            onClick={() => onChange(type.value)}
-            className={`
-              flex items-center gap-2 rounded-lg border-2 p-3 text-left transition-all
-              ${isSelected ? 'border-blue-500 bg-blue-50 dark:bg-blue-950' : 'border-gray-200 dark:border-gray-700'}
-            `}
-          >
-            <Icon size={18} className={isSelected ? 'text-blue-600' : 'text-gray-400'} />
-            <div>
-              <div className={`text-sm font-medium ${isSelected ? 'text-blue-900 dark:text-blue-100' : 'text-gray-700 dark:text-gray-300'}`}>
-                {type.label}
-              </div>
-            </div>
-          </button>
-        );
-      })}
-    </div>
-  );
+  rule: string;
+  comment: string;
 }
 
 function CreateRuleDialog({
   open,
   onOpenChange,
-  rule,
   onSuccess,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  rule?: { id: string; domain: string; type: CreateRuleFormData['type'] } | null;
   onSuccess: () => void;
 }) {
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<CreateRuleFormData>({
-    domain: rule?.domain || '',
-    type: rule?.type || 'block',
+    rule: '',
+    comment: '',
   });
 
   const createMutation = useMutation({
-    mutationFn: rulesApi.createRule,
+    mutationFn: () => rulesApi.createRule({
+      rule: formData.rule.trim(),
+      comment: formData.comment.trim() || undefined,
+    }),
     onSuccess: () => {
       toast.success('规则创建成功');
       queryClient.invalidateQueries({ queryKey: ['rules'] });
       onOpenChange(false);
-      setFormData({ domain: '', type: 'block' });
+      setFormData({ rule: '', comment: '' });
       onSuccess();
     },
     onError: (error: any) => {
-      toast.error(`创建失败: ${error.message || '未知错误'}`);
-    },
-  });
-
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: CreateRuleFormData }) =>
-      rulesApi.updateRule(id, data),
-    onSuccess: () => {
-      toast.success('规则更新成功');
-      queryClient.invalidateQueries({ queryKey: ['rules'] });
-      onOpenChange(false);
-      setFormData({ domain: '', type: 'block' });
-      onSuccess();
-    },
-    onError: (error: any) => {
-      toast.error(`更新失败: ${error.message || '未知错误'}`);
+      toast.error(`创建失败: ${error.response?.data || error.message || '未知错误'}`);
     },
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.domain.trim()) {
-      toast.error('请输入域名或规则');
+    if (!formData.rule.trim()) {
+      toast.error('请输入规则内容');
       return;
     }
-
-    if (rule) {
-      updateMutation.mutate({ id: rule.id, data: formData });
-    } else {
-      createMutation.mutate(formData);
-    }
+    createMutation.mutate();
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{rule ? '编辑规则' : '创建新规则'}</DialogTitle>
+          <DialogTitle>添加规则</DialogTitle>
           <DialogDescription>
-            {rule ? '修改 DNS 规则配置' : '添加新的 DNS 阻断或允许规则'}
+            输入 AdGuard 格式或 hosts 格式的 DNS 规则
           </DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit}>
           <div className="space-y-4 py-4">
-            {/* 规则类型选择 */}
             <div className="space-y-2">
-              <Label>规则类型</Label>
-              <RuleTypeSelector
-                value={formData.type}
-                onChange={(type) => setFormData({ ...formData, type })}
-              />
-            </div>
-
-            {/* 域名/规则输入 */}
-            <div className="space-y-2">
-              <Label htmlFor="domain">域名或规则</Label>
+              <Label htmlFor="rule">规则内容</Label>
               <Textarea
-                id="domain"
-                value={formData.domain}
-                onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => setFormData({ ...formData, domain: e.target.value })}
-                placeholder="例如: ||example.com^"
+                id="rule"
+                value={formData.rule}
+                onChange={(e) => setFormData({ ...formData, rule: e.target.value })}
+                placeholder="例如: ||ads.example.com^"
                 className="font-mono text-sm"
-                rows={4}
+                rows={3}
               />
               <p className="text-xs text-muted-foreground">
-                支持标准 AdGuard 格式规则。可以输入多个规则，每行一个。
+                支持 AdGuard 格式（||domain^）和 hosts 格式（0.0.0.0 domain）
               </p>
             </div>
-
-            {/* 帮助提示 */}
-            <div className="rounded-md bg-blue-50 dark:bg-blue-950 p-3">
-              <div className="flex items-start gap-2">
-                <Info size={14} className="mt-0.5 text-blue-600" />
-                <div className="text-xs text-blue-900 dark:text-blue-100">
-                  <p className="font-medium mb-1">规则格式说明</p>
-                  <ul className="space-y-0.5">
-                    <li>• ||domain.com^ - 阻断整个域名</li>
-                    <li>• ||sub.domain.com^ - 阻断子域名</li>
-                    <li>• ||domain.com/path/* - 阻断特定路径</li>
-                    <li>• domain.com##selector - 隐藏页面元素</li>
-                  </ul>
-                </div>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="comment">备注（可选）</Label>
+              <Input
+                id="comment"
+                value={formData.comment}
+                onChange={(e) => setFormData({ ...formData, comment: e.target.value })}
+                placeholder="说明此规则的用途"
+              />
             </div>
           </div>
           <DialogFooter>
@@ -250,24 +164,15 @@ function CreateRuleDialog({
               type="button"
               variant="outline"
               onClick={() => onOpenChange(false)}
-              disabled={createMutation.isPending || updateMutation.isPending}
+              disabled={createMutation.isPending}
             >
               取消
             </Button>
-            <Button
-              type="submit"
-              disabled={createMutation.isPending || updateMutation.isPending}
-            >
-              {createMutation.isPending || updateMutation.isPending ? (
-                <>
-                  <RefreshCw size={16} className="mr-2 animate-spin" />
-                  保存中...
-                </>
+            <Button type="submit" disabled={createMutation.isPending}>
+              {createMutation.isPending ? (
+                <><RefreshCw size={16} className="mr-2 animate-spin" />保存中...</>
               ) : (
-                <>
-                  <Plus size={16} className="mr-1" />
-                  {rule ? '更新' : '创建'}
-                </>
+                <><Plus size={16} className="mr-1" />创建</>
               )}
             </Button>
           </DialogFooter>
@@ -281,12 +186,12 @@ function DeleteConfirmDialog({
   open,
   onOpenChange,
   onConfirm,
-  ruleIds,
+  count,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onConfirm: () => void;
-  ruleIds: string[];
+  count: number;
 }) {
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
@@ -294,9 +199,7 @@ function DeleteConfirmDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>确认删除</AlertDialogTitle>
           <AlertDialogDescription>
-            {ruleIds.length === 1
-              ? '确定要删除这条规则吗？此操作无法撤销。'
-              : `确定要删除选中的 ${ruleIds.length} 条规则吗？此操作无法撤销。`}
+            {count === 1 ? '确定要删除这条规则吗？' : `确定要删除选中的 ${count} 条规则吗？`}此操作无法撤销。
           </AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
@@ -320,46 +223,29 @@ export default function RulesPage() {
   const [showExamples, setShowExamples] = useState(false);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
-  const [editingRule, setEditingRule] = useState<{ id: string; domain: string; type: CreateRuleFormData['type'] } | null>(null);
 
-  // 查询规则列表
-  const { data: rules = [], isLoading, error, refetch } = useQuery({
+  const { data: rules = [], isLoading, error, refetch } = useQuery<Rule[]>({
     queryKey: ['rules'],
     queryFn: rulesApi.listRules,
   });
 
-  // 过滤规则
   const filteredRules = rules.filter((rule) =>
-    rule.domain.toLowerCase().includes(searchQuery.toLowerCase())
+    rule.rule.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (rule.comment ?? '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // 切换规则启用状态
-  const toggleMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: CreateRuleFormData }) =>
-      rulesApi.updateRule(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['rules'] });
-      toast.success('规则状态已更新');
-    },
-    onError: (error: any) => {
-      toast.error(`更新失败: ${error.message || '未知错误'}`);
-    },
-  });
-
-  // 批量删除
   const deleteMutation = useMutation({
     mutationFn: rulesApi.deleteRules,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['rules'] });
       setSelectedIds(new Set());
-      toast.success(`删除了 ${selectedIds.size} 条规则`);
+      toast.success(`已删除 ${selectedIds.size} 条规则`);
     },
     onError: (error: any) => {
       toast.error(`删除失败: ${error.message || '未知错误'}`);
     },
   });
 
-  // 全选/取消全选
   const handleSelectAll = () => {
     if (selectedIds.size === filteredRules.length) {
       setSelectedIds(new Set());
@@ -368,46 +254,30 @@ export default function RulesPage() {
     }
   };
 
-  // 切换单个规则选中
   const handleSelectRule = (id: string) => {
     const newSelected = new Set(selectedIds);
-    if (newSelected.has(id)) {
-      newSelected.delete(id);
-    } else {
-      newSelected.add(id);
-    }
+    if (newSelected.has(id)) newSelected.delete(id);
+    else newSelected.add(id);
     setSelectedIds(newSelected);
   };
 
-  // 确认删除
   const handleDeleteConfirm = () => {
     if (selectedIds.size === 0) return;
     deleteMutation.mutate(Array.from(selectedIds));
     setDeleteDialogOpen(false);
   };
 
-  // 格式化时间
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleString('zh-CN', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
+  const formatDate = (dateStr: string) =>
+    new Date(dateStr).toLocaleString('zh-CN', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit',
     });
-  };
-
-  // 获取规则类型配置
-  const getRuleTypeConfig = (type: CreateRuleFormData['type']) => {
-    return RULE_TYPES.find(t => t.value === type) || RULE_TYPES[0];
-  };
 
   return (
     <div className="space-y-6">
       {/* 头部操作栏 */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-1 items-center gap-2">
-          {/* 搜索框 */}
           <input
             type="text"
             placeholder="搜索规则..."
@@ -417,27 +287,15 @@ export default function RulesPage() {
           />
         </div>
         <div className="flex items-center gap-2">
-          {/* 刷新按钮 */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isLoading}
-          >
+          <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isLoading}>
             <RefreshCw size={16} className={isLoading ? 'animate-spin' : ''} />
           </Button>
-          {/* 删除按钮 */}
           {selectedIds.size > 0 && (
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => setDeleteDialogOpen(true)}
-            >
+            <Button variant="destructive" size="sm" onClick={() => setDeleteDialogOpen(true)}>
               <Trash2 size={16} className="mr-1" />
               删除 ({selectedIds.size})
             </Button>
           )}
-          {/* 创建按钮 */}
           <Button onClick={() => setCreateDialogOpen(true)}>
             <Plus size={16} className="mr-1" />
             添加规则
@@ -452,7 +310,7 @@ export default function RulesPage() {
             <div>
               <CardTitle>规则列表</CardTitle>
               <CardDescription>
-                {rules.length} 条规则 {searchQuery && `(${filteredRules.length} 匹配)`}
+                共 {rules.length} 条规则{searchQuery && ` (${filteredRules.length} 匹配)`}
               </CardDescription>
             </div>
           </div>
@@ -466,10 +324,8 @@ export default function RulesPage() {
             <div className="flex items-center justify-center py-12 text-center">
               <div className="space-y-2">
                 <Shield size={48} className="mx-auto text-muted-foreground" />
-                <p className="text-muted-foreground">加载规则失败，请稍后重试</p>
-                <Button variant="outline" onClick={() => refetch()}>
-                  重试
-                </Button>
+                <p className="text-muted-foreground">加载失败，请重试</p>
+                <Button variant="outline" onClick={() => refetch()}>重试</Button>
               </div>
             </div>
           ) : filteredRules.length === 0 ? (
@@ -479,19 +335,13 @@ export default function RulesPage() {
                 <div>
                   <p className="text-lg font-medium">暂无规则</p>
                   <p className="text-muted-foreground">
-                    {searchQuery ? '没有找到匹配的规则' : '点击添加按钮创建您的第一条 DNS 规则'}
+                    {searchQuery ? '没有找到匹配的规则' : '点击添加按钮创建第一条 DNS 规则'}
                   </p>
                 </div>
                 {!searchQuery && (
-                  <div className="flex justify-center gap-2">
-                    <Button onClick={() => setCreateDialogOpen(true)}>
-                      <Plus size={16} className="mr-1" />
-                      添加规则
-                    </Button>
-                    <Button variant="outline" onClick={() => setShowExamples(true)}>
-                      查看示例
-                    </Button>
-                  </div>
+                  <Button onClick={() => setCreateDialogOpen(true)}>
+                    <Plus size={16} className="mr-1" />添加规则
+                  </Button>
                 )}
               </div>
             </div>
@@ -502,22 +352,21 @@ export default function RulesPage() {
                   <TableRow>
                     <TableHead className="w-12">
                       <Checkbox
-                        checked={selectedIds.size === filteredRules.length}
+                        checked={selectedIds.size === filteredRules.length && filteredRules.length > 0}
                         onCheckedChange={handleSelectAll}
                         aria-label="全选"
                       />
                     </TableHead>
-                    <TableHead>规则内容</TableHead>
+                    <TableHead>规则</TableHead>
                     <TableHead>类型</TableHead>
-                    <TableHead>状态</TableHead>
+                    <TableHead>备注</TableHead>
                     <TableHead>创建时间</TableHead>
-                    <TableHead className="w-24">操作</TableHead>
+                    <TableHead className="w-20">操作</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filteredRules.map((rule) => {
-                    const typeConfig = getRuleTypeConfig(rule.type);
-                    const TypeIcon = typeConfig.icon;
+                    const ruleType = inferRuleType(rule.rule);
                     return (
                       <TableRow
                         key={rule.id}
@@ -527,62 +376,42 @@ export default function RulesPage() {
                           <Checkbox
                             checked={selectedIds.has(rule.id)}
                             onCheckedChange={() => handleSelectRule(rule.id)}
-                            aria-label={`选择规则 ${rule.domain}`}
                           />
                         </TableCell>
                         <TableCell>
                           <code className="text-sm font-mono bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded">
-                            {rule.domain}
+                            {rule.rule}
                           </code>
                         </TableCell>
                         <TableCell>
-                          <div className={`flex items-center gap-1.5 ${typeConfig.color}`}>
-                            <TypeIcon size={14} />
-                            <span className="text-sm">{typeConfig.label.split(' ')[0]}</span>
-                          </div>
+                          {ruleType === 'allow' ? (
+                            <Badge variant="outline" className="text-green-600 border-green-300">
+                              <CheckCircle2 size={12} className="mr-1" />允许
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="text-red-600 border-red-300">
+                              <XCircle size={12} className="mr-1" />阻断
+                            </Badge>
+                          )}
                         </TableCell>
-                        <TableCell>
-                          <Switch
-                            checked={rule.enabled}
-                            onCheckedChange={() =>
-                              toggleMutation.mutate({
-                                id: rule.id,
-                                data: { domain: rule.domain, type: rule.type },
-                              })
-                            }
-                            disabled={toggleMutation.isPending}
-                          />
+                        <TableCell className="text-sm text-muted-foreground">
+                          {rule.comment || '-'}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {formatDate(rule.created_at)}
                         </TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                setEditingRule({
-                                  id: rule.id,
-                                  domain: rule.domain,
-                                  type: rule.type,
-                                })
-                              }
-                            >
-                              <Edit2 size={14} />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                              onClick={() => {
-                                setSelectedIds(new Set([rule.id]));
-                                setDeleteDialogOpen(true);
-                              }}
-                            >
-                              <Trash2 size={14} />
-                            </Button>
-                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            onClick={() => {
+                              setSelectedIds(new Set([rule.id]));
+                              setDeleteDialogOpen(true);
+                            }}
+                          >
+                            <Trash2 size={14} />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     );
@@ -594,7 +423,7 @@ export default function RulesPage() {
         </CardContent>
       </Card>
 
-      {/* 规则示例 */}
+      {/* 规则格式说明 */}
       <Card>
         <CardHeader>
           <button
@@ -602,22 +431,19 @@ export default function RulesPage() {
             className="flex items-center justify-between w-full"
           >
             <CardTitle className="flex items-center gap-2">
-              <Info size={18} />
-              规则格式说明
+              <Info size={18} />规则格式说明
             </CardTitle>
             {showExamples ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
           </button>
         </CardHeader>
         {showExamples && (
           <CardContent className="space-y-4">
-            {RULE_EXAMPLES.map((category, idx) => (
+            {RULE_EXAMPLES.map((cat, idx) => (
               <div key={idx}>
-                <h4 className="font-medium text-sm mb-2">{category.category}</h4>
+                <h4 className="font-medium text-sm mb-2">{cat.category}</h4>
                 <ul className="space-y-1 text-sm text-muted-foreground">
-                  {category.examples.map((example, i) => (
-                    <li key={i} className="font-mono">
-                      {example}
-                    </li>
+                  {cat.examples.map((ex, i) => (
+                    <li key={i} className="font-mono">{ex}</li>
                   ))}
                 </ul>
               </div>
@@ -626,28 +452,17 @@ export default function RulesPage() {
         )}
       </Card>
 
-      {/* 创建规则对话框 */}
       <CreateRuleDialog
-        open={createDialogOpen || editingRule !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setCreateDialogOpen(false);
-            setEditingRule(null);
-          }
-        }}
-        rule={editingRule}
-        onSuccess={() => {
-          setCreateDialogOpen(false);
-          setEditingRule(null);
-        }}
+        open={createDialogOpen}
+        onOpenChange={setCreateDialogOpen}
+        onSuccess={() => setCreateDialogOpen(false)}
       />
 
-      {/* 删除确认对话框 */}
       <DeleteConfirmDialog
         open={deleteDialogOpen}
         onOpenChange={setDeleteDialogOpen}
         onConfirm={handleDeleteConfirm}
-        ruleIds={Array.from(selectedIds)}
+        count={selectedIds.size}
       />
     </div>
   );

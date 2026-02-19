@@ -86,8 +86,8 @@ const POPULAR_FILTERS = [
 interface CreateFilterFormData {
   name: string;
   url: string;
-  type: 'adguard' | 'hosts';
-  enabled: boolean;
+  type: 'adguard' | 'hosts';  // local UI only, not sent to backend
+  is_enabled: boolean;
 }
 
 function FilterTypeSelector({
@@ -145,7 +145,7 @@ function PopularFiltersList({
               <div className="text-sm font-medium truncate">{filter.name}</div>
               <div className="text-xs text-muted-foreground truncate mt-0.5">{filter.url}</div>
             </div>
-            <Badge variant="outline" className="shrink-0">{filter.type}</Badge>
+            <Badge variant="outline" className="shrink-0">{'AdGuard'}</Badge>
           </button>
         ))}
       </div>
@@ -168,8 +168,8 @@ function CreateFilterDialog({
   const [formData, setFormData] = useState<CreateFilterFormData>({
     name: filter?.name || '',
     url: filter?.url || '',
-    type: filter?.type || 'adguard',
-    enabled: filter?.enabled ?? true,
+    type: 'adguard',
+    is_enabled: filter?.is_enabled ?? true,
   });
 
   const createMutation = useMutation({
@@ -178,7 +178,7 @@ function CreateFilterDialog({
       toast.success('过滤列表创建成功');
       queryClient.invalidateQueries({ queryKey: ['filters'] });
       onOpenChange(false);
-      setFormData({ name: '', url: '', type: 'adguard', enabled: true });
+      setFormData({ name: '', url: '', type: 'adguard', is_enabled: true });
       onSuccess();
     },
     onError: (error: any) => {
@@ -193,7 +193,7 @@ function CreateFilterDialog({
       toast.success('过滤列表更新成功');
       queryClient.invalidateQueries({ queryKey: ['filters'] });
       onOpenChange(false);
-      setFormData({ name: '', url: '', type: 'adguard', enabled: true });
+      setFormData({ name: '', url: '', type: 'adguard', is_enabled: true });
       onSuccess();
     },
     onError: (error: any) => {
@@ -220,7 +220,7 @@ function CreateFilterDialog({
       name: popularFilter.name,
       url: popularFilter.url,
       type: popularFilter.type,
-      enabled: true,
+      is_enabled: true,
     });
   };
 
@@ -286,8 +286,8 @@ function CreateFilterDialog({
                 </p>
               </div>
               <Switch
-                checked={formData.enabled}
-                onCheckedChange={(checked) => setFormData({ ...formData, enabled: checked })}
+                checked={formData.is_enabled}
+                onCheckedChange={(checked) => setFormData({ ...formData, is_enabled: checked })}
               />
             </div>
 
@@ -399,8 +399,8 @@ export default function FiltersPage() {
 
   // 切换过滤器启用状态
   const toggleMutation = useMutation({
-    mutationFn: ({ id, enabled }: { id: string; enabled: boolean }) =>
-      filtersApi.updateFilter(id, { enabled }),
+    mutationFn: ({ id, is_enabled }: { id: string; is_enabled: boolean }) =>
+      filtersApi.updateFilter(id, { is_enabled }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['filters'] });
       toast.success('过滤器状态已更新');
@@ -512,7 +512,7 @@ export default function FiltersPage() {
 
   // 计算统计
   const totalRules = filters.reduce((sum, f) => sum + (f.rule_count || 0), 0);
-  const enabledFilters = filters.filter(f => f.enabled).length;
+  const enabledFilters = filters.filter(f => f.is_enabled).length;
   const remoteFilters = filters.filter(f => f.url).length;
 
   return (
@@ -708,7 +708,7 @@ export default function FiltersPage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant="outline">{filter.type}</Badge>
+                          <Badge variant="outline">{'AdGuard'}</Badge>
                         </TableCell>
                         <TableCell>
                           <span className="text-sm font-mono">
@@ -717,9 +717,9 @@ export default function FiltersPage() {
                         </TableCell>
                         <TableCell>
                           <Switch
-                            checked={filter.enabled}
+                            checked={filter.is_enabled}
                             onCheckedChange={(checked) =>
-                              toggleMutation.mutate({ id: filter.id, enabled: checked })
+                              toggleMutation.mutate({ id: filter.id, is_enabled: checked })
                             }
                             disabled={toggleMutation.isPending}
                           />
@@ -743,7 +743,7 @@ export default function FiltersPage() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleRefreshFilter(filter.id)}
-                                disabled={isRefreshing || !filter.enabled}
+                                disabled={isRefreshing || !filter.is_enabled}
                                 title="刷新"
                               >
                                 <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
