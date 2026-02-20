@@ -1,9 +1,9 @@
 -- Insert Default Query Log Templates
--- File: src/db/migrations/006_default_query_log_templates.sql
+-- File: src/db/migrations/007_default_query_log_templates.sql
 -- Author: ui-duarte (Matías Duarte)
 -- Date: 2026-02-20
 
-INSERT INTO query_log_templates (id, name, filters, logic, created_by, created_at, is_public)
+INSERT OR IGNORE INTO query_log_templates (id, name, filters, logic, created_by, created_at, is_public)
 VALUES
   -- 1. 最近拦截
   (

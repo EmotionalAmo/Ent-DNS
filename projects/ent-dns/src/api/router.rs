@@ -74,8 +74,8 @@ pub fn routes(state: Arc<AppState>) -> Router {
         // WebSocket: issue one-time ticket (authenticated), then connect via ticket
         .route("/api/v1/ws/ticket", post(handlers::ws::issue_ticket))
         .route("/api/v1/ws/query-log", get(handlers::ws::query_log_ws))
-        // DNS-over-HTTPS (RFC 8484) — public endpoint, no auth required - TODO: 暂时禁用
-        // .route("/dns-query", get(handlers::doh::get_query).post(handlers::doh::post_query))
+        // DNS-over-HTTPS (RFC 8484) — public endpoint, no auth required
+        .route("/dns-query", get(handlers::doh::get_query).post(handlers::doh::post_query))
         .with_state(state)
         // 前端静态文件 + SPA fallback（必须在 with_state 之后）
         // ENT_DNS_STATIC_DIR overrides the default relative path (fixes L-2)

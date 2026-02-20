@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { dashboardApi } from '@/api';
 import { QueryTrendChart } from '@/components/dashboard/QueryTrendChart';
-import { Activity, Shield, Database, Server, Filter, Settings, TrendingUp, TrendingDown, Minus } from 'lucide-react';
+import { Activity, Shield, Database, Server, Filter, Settings, TrendingUp, TrendingDown, Minus, Wifi, List, Eye } from 'lucide-react';
 
 export default function DashboardPage() {
   // Fetch dashboard stats (refresh every 30s)
@@ -87,8 +87,51 @@ export default function DashboardPage() {
     },
   ];
 
+  // Zero-traffic onboarding guide
+  const showOnboarding = !isLoading && !error && totalQueries === 0;
+
   return (
     <div className="space-y-6">
+      {/* Zero-traffic onboarding guide */}
+      {showOnboarding && (
+        <Card className="border-blue-200 bg-blue-50">
+          <CardHeader>
+            <CardTitle className="text-blue-800 text-base">开始使用 Ent-DNS</CardTitle>
+            <CardDescription className="text-blue-600">尚未检测到任何 DNS 查询，按以下步骤完成配置</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-blue-100 p-2 shrink-0">
+                  <List className="h-4 w-4 text-blue-700" />
+                </div>
+                <div>
+                  <p className="font-medium text-blue-900 text-sm">1. 订阅过滤列表</p>
+                  <p className="text-xs text-blue-600 mt-1">前往「过滤列表」页面，添加 AdGuard、EasyList 等订阅源</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-blue-100 p-2 shrink-0">
+                  <Wifi className="h-4 w-4 text-blue-700" />
+                </div>
+                <div>
+                  <p className="font-medium text-blue-900 text-sm">2. 将设备 DNS 指向本机</p>
+                  <p className="text-xs text-blue-600 mt-1">修改设备 DNS 服务器为运行 Ent-DNS 的主机 IP（默认端口 53）</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <div className="rounded-full bg-blue-100 p-2 shrink-0">
+                  <Eye className="h-4 w-4 text-blue-700" />
+                </div>
+                <div>
+                  <p className="font-medium text-blue-900 text-sm">3. 查看实时日志</p>
+                  <p className="text-xs text-blue-600 mt-1">前往「查询日志」页面确认 DNS 请求已被正确处理</p>
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
       {/* Stats Cards */}
       <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {statsCards.map((card, index) => {

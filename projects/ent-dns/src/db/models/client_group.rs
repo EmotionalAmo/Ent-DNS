@@ -41,8 +41,8 @@ pub struct ClientGroupMembership {
 pub struct ClientGroupRule {
     pub id: i64,
     pub group_id: i64,
-    pub rule_id: i64,
-    pub rule_type: String, // "filter" | "rewrite"
+    pub rule_id: String,   // TEXT: custom_rules.id or dns_rewrites.id
+    pub rule_type: String, // "custom_rule" | "rewrite"
     pub priority: i32,
     pub created_at: DateTime<Utc>,
 }
@@ -113,15 +113,15 @@ pub struct BatchBindRulesRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BindRuleRequest {
-    pub rule_id: i64,
-    pub rule_type: String,
+    pub rule_id: String,   // custom_rules.id or dns_rewrites.id (TEXT UUID)
+    pub rule_type: String, // "custom_rule" | "rewrite"
     pub priority: Option<i32>,
 }
 
 /// Batch unbind rules request
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BatchUnbindRulesRequest {
-    pub rule_ids: Vec<i64>,
+    pub rule_ids: Vec<String>, // TEXT UUIDs
     pub rule_type: String,
 }
 

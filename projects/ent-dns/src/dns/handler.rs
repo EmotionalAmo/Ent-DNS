@@ -12,10 +12,29 @@ use crate::config::Config;
 use crate::db::DbPool;
 use crate::db::query_log_writer::QueryLogEntry;
 use crate::metrics::DnsMetrics;
-use super::{filter::FilterEngine, resolver::DnsResolver, cache::DnsCache};
+use super::{filter::FilterEngine, resolver::DnsResolver, cache::DnsCache, rules::RuleSet};
 
 /// TTL for the client-config cache.  Client configs change rarely; 60 s is safe. (M-4 fix)
 const CLIENT_CACHE_TTL: Duration = Duration::from_secs(60);
+
+/// Per-client resolved configuration, cached in moka for CLIENT_CACHE_TTL.
+#[derive(Clone)]
+struct ClientConfig {
+    /// Whether DNS filtering is enabled for this client.
+    filter_enabled: bool,
+    /// Custom upstream resolvers, if specified by the client or its highest-priority group.
+    upstream_urls: Option<Vec<String>>,
+    /// Group-specific rule set built from client_group_rules → custom_rules.
+    /// When Some, replaces the global FilterEngine check for this client.
+    /// When None, falls back to the global FilterEngine.
+    group_ruleset: Option<Arc<RuleSet>>,
+}
+
+impl Default for ClientConfig {
+    fn default() -> Self {
+        Self { filter_enabled: true, upstream_urls: None, group_ruleset: None }
+    }
+}
 
 pub struct DnsHandler {
     filter: Arc<FilterEngine>,
@@ -23,8 +42,8 @@ pub struct DnsHandler {
     /// Per-client resolvers keyed by sorted upstream list (e.g. "1.1.1.1,8.8.8.8")
     client_resolvers: RwLock<HashMap<String, Arc<DnsResolver>>>,
     cache: Arc<DnsCache>,
-    /// TTL cache for client config: IP → (filter_enabled, upstreams) (M-4 fix)
-    client_config_cache: MokaCache<String, (bool, Option<Vec<String>>)>,
+    /// TTL cache for client config: IP → ClientConfig (M-4 fix)
+    client_config_cache: MokaCache<String, ClientConfig>,
     db: DbPool,
     metrics: Arc<DnsMetrics>,
     query_log_tx: broadcast::Sender<serde_json::Value>,
@@ -86,9 +105,8 @@ impl DnsHandler {
         // Normalize domain (remove trailing dot)
         let domain_normalized = domain.trim_end_matches('.');
 
-        // Look up client-specific config (filter override + custom upstreams)
-        let (client_filter_enabled, client_upstream_urls) =
-            self.get_client_config(&client_ip).await;
+        // Look up client-specific config (filter override + custom upstreams + group rules)
+        let config = self.get_client_config(&client_ip).await;
 
         // Check DNS rewrite first (always, regardless of client config)
         if let Some(answer) = self.filter.check_rewrite(domain_normalized).await {
@@ -104,13 +122,24 @@ impl DnsHandler {
             }
         }
 
-        // Check filter (use client's filter_enabled setting if configured, else default true)
-        if client_filter_enabled && self.filter.is_blocked(&domain).await {
-            tracing::debug!("Blocked: {}", domain);
-            let elapsed = start.elapsed().as_millis() as i64;
-            self.metrics.inc_blocked();
-            self.log_query(client_ip, &domain, &qtype_str, "blocked", Some("filter_rule"), elapsed);
-            return self.nxdomain(&request);
+        // Check filter using client's filter_enabled setting (default true)
+        if config.filter_enabled {
+            let blocked = if let Some(ref ruleset) = config.group_ruleset {
+                // Client belongs to a group with specific rules — use group rules only
+                tracing::debug!("Using group-specific ruleset for {}", client_ip);
+                ruleset.is_blocked(domain_normalized)
+            } else {
+                // No group rules — use global FilterEngine
+                self.filter.is_blocked(&domain).await
+            };
+
+            if blocked {
+                tracing::debug!("Blocked: {}", domain);
+                let elapsed = start.elapsed().as_millis() as i64;
+                self.metrics.inc_blocked();
+                self.log_query(client_ip, &domain, &qtype_str, "blocked", Some("filter_rule"), elapsed);
+                return self.nxdomain(&request);
+            }
         }
 
         // Check cache
@@ -129,7 +158,7 @@ impl DnsHandler {
         }
 
         // Resolve: use client-specific upstream if configured, else global resolver
-        let (response, min_ttl) = if let Some(ref upstreams) = client_upstream_urls {
+        let (response, min_ttl) = if let Some(ref upstreams) = config.upstream_urls {
             let resolver = self.get_or_create_client_resolver(upstreams).await?;
             resolver.resolve(&domain, qtype, &request).await?
         } else {
@@ -164,32 +193,36 @@ impl DnsHandler {
     }
 
     /// Look up client configuration by source IP.
-    /// Returns (filter_enabled, Option<Vec<upstream_urls>>).
-    /// Results are cached for CLIENT_CACHE_TTL to avoid per-query full-table scans (M-4 fix).
-    async fn get_client_config(&self, client_ip: &str) -> (bool, Option<Vec<String>>) {
+    /// Returns ClientConfig with filter_enabled, upstream_urls, and optional group_ruleset.
+    /// Results are cached for CLIENT_CACHE_TTL to avoid per-query DB scans (M-4 fix).
+    async fn get_client_config(&self, client_ip: &str) -> ClientConfig {
         // Fast path: cache hit
         if let Some(cached) = self.client_config_cache.get(client_ip).await {
             return cached;
         }
 
-        // Slow path: full table scan (rare — only on cache miss)
+        // Slow path: DB lookup (only on cache miss)
         let result = self.resolve_client_config(client_ip).await;
         self.client_config_cache.insert(client_ip.to_string(), result.clone()).await;
         result
     }
 
-    async fn resolve_client_config(&self, client_ip: &str) -> (bool, Option<Vec<String>>) {
-        let full_rows: Vec<(String, i64, Option<String>)> = match sqlx::query_as(
-            "SELECT identifiers, filter_enabled, upstreams FROM clients"
+    async fn resolve_client_config(&self, client_ip: &str) -> ClientConfig {
+        let full_rows: Vec<(String, String, i64, Option<String>)> = match sqlx::query_as(
+            "SELECT id, identifiers, filter_enabled, upstreams FROM clients"
         )
         .fetch_all(&self.db)
         .await {
             Ok(r) => r,
-            Err(_) => return (true, None),
+            Err(_) => return ClientConfig::default(),
         };
 
-        for (identifiers_json, filter_enabled, upstreams_json) in full_rows {
-            // Parse identifiers array (["192.168.1.10", "192.168.1.11", ...])
+        let mut matched_client_id: Option<String> = None;
+        let mut filter_enabled = true;
+        let mut upstream_urls: Option<Vec<String>> = None;
+
+        for (client_id, identifiers_json, fe, upstreams_json) in full_rows {
+            // Parse identifiers array (["192.168.1.10", "192.168.1.0/24", ...])
             if let Ok(identifiers) = serde_json::from_str::<Vec<serde_json::Value>>(&identifiers_json) {
                 let matched = identifiers.iter().any(|id| {
                     let id_str = id.as_str().unwrap_or("");
@@ -205,16 +238,63 @@ impl DnsHandler {
                 });
 
                 if matched {
-                    let filter_on = filter_enabled == 1;
-                    let upstreams = upstreams_json.and_then(|s| {
+                    matched_client_id = Some(client_id);
+                    filter_enabled = fe == 1;
+                    upstream_urls = upstreams_json.and_then(|s| {
                         serde_json::from_str::<Vec<String>>(&s).ok()
                     }).filter(|v| !v.is_empty());
-                    return (filter_on, upstreams);
+                    break;
                 }
             }
         }
 
-        (true, None) // default: filter enabled, global resolver
+        // If client was matched, check for group-specific rules
+        let group_ruleset = if let Some(ref cid) = matched_client_id {
+            self.load_group_rules_for_client(cid).await
+        } else {
+            None
+        };
+
+        ClientConfig { filter_enabled, upstream_urls, group_ruleset }
+    }
+
+    /// Load custom rule strings bound to groups this client belongs to.
+    /// Fetches rules from all groups the client is in, ordered by group priority.
+    /// Returns None if the client has no group rules (caller falls back to global FilterEngine).
+    async fn load_group_rules_for_client(&self, client_id: &str) -> Option<Arc<RuleSet>> {
+        let rule_rows: Vec<(String,)> = match sqlx::query_as(
+            r#"
+            SELECT cr.rule
+            FROM client_group_memberships m
+            JOIN client_groups cg ON cg.id = m.group_id
+            JOIN client_group_rules cgr ON cgr.group_id = m.group_id
+            JOIN custom_rules cr ON cr.id = cgr.rule_id
+            WHERE m.client_id = ?
+              AND cgr.rule_type = 'custom_rule'
+              AND cr.is_enabled = 1
+            ORDER BY cg.priority ASC
+            "#
+        )
+        .bind(client_id)
+        .fetch_all(&self.db)
+        .await {
+            Ok(r) => r,
+            Err(e) => {
+                tracing::warn!("Failed to load group rules for client {}: {}", client_id, e);
+                return None;
+            }
+        };
+
+        if rule_rows.is_empty() {
+            return None;
+        }
+
+        let mut ruleset = RuleSet::new();
+        for (rule,) in rule_rows {
+            ruleset.add_rule(&rule);
+        }
+        tracing::debug!("Loaded {} group rules for client {}", ruleset.blocked_count() + ruleset.allowed_count(), client_id);
+        Some(Arc::new(ruleset))
     }
 
     /// Get or create a cached per-client resolver for the given upstream list.

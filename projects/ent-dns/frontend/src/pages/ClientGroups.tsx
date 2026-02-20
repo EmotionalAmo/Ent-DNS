@@ -37,6 +37,7 @@ export default function ClientGroupsPage() {
   const qc = useQueryClient();
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'clients' | 'rules'>('clients');
+  const [bannerDismissed, setBannerDismissed] = useState(false);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState<ClientGroup | null>(null);
@@ -270,6 +271,26 @@ export default function ClientGroupsPage() {
   };
 
   return (
+    <>
+      {/* 使用引导 Banner */}
+      {!bannerDismissed && (
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-3 flex items-center justify-between text-sm">
+          <div className="flex items-center gap-2 text-blue-800">
+            <span className="font-medium">✓ 客户端分组策略已启用</span>
+            <span className="text-blue-600">—</span>
+            <span className="text-blue-700">
+              创建分组 → 在"成员"标签添加客户端 → 在"规则"标签绑定自定义规则，即可为该组设备应用独立的 DNS 过滤策略
+            </span>
+          </div>
+          <button
+            onClick={() => setBannerDismissed(true)}
+            className="text-blue-500 hover:text-blue-700 ml-4 text-base leading-none"
+            aria-label="关闭提示"
+          >
+            ×
+          </button>
+        </div>
+      )}
     <div className="flex h-screen">
       {/* 左侧分组树 */}
       <div className="w-80 border-r">
@@ -543,5 +564,6 @@ export default function ClientGroupsPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </>
   );
 }

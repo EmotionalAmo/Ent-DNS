@@ -313,21 +313,20 @@ pub async fn get_group_members(
         return Err(AppError::NotFound(format!("Client group {} not found", id)));
     }
 
-    // Single query to get members with their group info
-    let rows: Vec<(String, Option<String>, String, Option<String>, Option<String>, i64)> =
+    // Single query to get members from the clients table
+    let rows: Vec<(String, String, String, i64, String)> =
         sqlx::query_as(
             r#"
             SELECT DISTINCT
                 c.id,
                 c.name,
-                c.ip,
-                c.mac,
-                c.last_seen,
-                c.query_count
-            FROM dns_clients c
+                c.identifiers,
+                c.filter_enabled,
+                c.created_at
+            FROM clients c
             INNER JOIN client_group_memberships m ON c.id = m.client_id
             WHERE m.group_id = ?
-            ORDER BY c.last_seen DESC
+            ORDER BY c.created_at DESC
             LIMIT ? OFFSET ?
             "#,
         )
@@ -338,12 +337,7 @@ pub async fn get_group_members(
         .await?;
 
     let total: i64 = sqlx::query_scalar(
-        r#"
-        SELECT COUNT(DISTINCT c.id)
-        FROM dns_clients c
-        INNER JOIN client_group_memberships m ON c.id = m.client_id
-        WHERE m.group_id = ?
-        "#,
+        "SELECT COUNT(DISTINCT c.id) FROM clients c INNER JOIN client_group_memberships m ON c.id = m.client_id WHERE m.group_id = ?",
     )
     .bind(id)
     .fetch_one(&state.db)
@@ -351,14 +345,15 @@ pub async fn get_group_members(
 
     let data: Vec<Value> = rows
         .into_iter()
-        .map(|(client_id, name, ip, mac, last_seen, query_count)| {
+        .map(|(client_id, name, identifiers, filter_enabled, created_at)| {
+            let identifiers_val: serde_json::Value =
+                serde_json::from_str(&identifiers).unwrap_or(serde_json::Value::Array(vec![]));
             json!({
                 "id": client_id,
                 "name": name,
-                "ip": ip,
-                "mac": mac,
-                "last_seen": last_seen,
-                "query_count": query_count,
+                "identifiers": identifiers_val,
+                "filter_enabled": filter_enabled == 1,
+                "created_at": created_at,
             })
         })
         .collect();
@@ -401,9 +396,9 @@ pub async fn batch_add_clients(
     let now = Utc::now().to_rfc3339();
 
     for client_id in &body.client_ids {
-        // Check if client exists
+        // Check if client exists in the admin clients table
         let client_exists: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM dns_clients WHERE id = ?")
+            sqlx::query_as("SELECT id FROM clients WHERE id = ?")
                 .bind(client_id)
                 .fetch_optional(&state.db)
                 .await?;
@@ -511,9 +506,9 @@ pub async fn batch_move_clients(
     let now = Utc::now().to_rfc3339();
 
     for client_id in &body.client_ids {
-        // Check if client exists
+        // Check if client exists in the admin clients table
         let client_exists: Option<(String,)> =
-            sqlx::query_as("SELECT id FROM dns_clients WHERE id = ?")
+            sqlx::query_as("SELECT id FROM clients WHERE id = ?")
                 .bind(client_id)
                 .fetch_optional(&state.db)
                 .await?;
@@ -559,25 +554,25 @@ pub async fn batch_move_clients(
                     cache.invalidate(client_id).await;
                 }
 
-                // Get applied rules for this group
-                let rules: Vec<(i64, String, String)> = sqlx::query_as(
+                // Get applied rules for this group (custom rules only)
+                let rules: Vec<(String, String, Option<String>)> = sqlx::query_as(
                     r#"
-                    SELECT f.id, f.name, f.action
-                    FROM dns_filters f
-                    INNER JOIN client_group_rules gr ON f.id = gr.rule_id
-                    WHERE gr.group_id = ? AND gr.rule_type = 'filter'
+                    SELECT cr.id, cr.rule, cr.comment
+                    FROM custom_rules cr
+                    INNER JOIN client_group_rules gr ON cr.id = gr.rule_id
+                    WHERE gr.group_id = ? AND gr.rule_type = 'custom_rule' AND cr.is_enabled = 1
                     "#,
                 )
                 .bind(to_group_id)
                 .fetch_all(&state.db)
                 .await?;
 
-                applied_rules.extend(rules.into_iter().map(|(rule_id, name, action)| {
+                applied_rules.extend(rules.into_iter().map(|(rule_id, rule, comment)| {
                     json!({
                         "rule_id": rule_id,
-                        "rule_type": "filter",
-                        "name": name,
-                        "action": action,
+                        "rule_type": "custom_rule",
+                        "rule": rule,
+                        "comment": comment,
                     })
                 }));
             }
@@ -612,13 +607,13 @@ pub async fn get_group_rules(
 
     let rule_type = params.rule_type.as_deref().unwrap_or("all");
 
-    let data: Vec<Value> = if rule_type == "filter" {
-        let rules: Vec<(i64, String, String, String, i32, String)> = sqlx::query_as(
+    let data: Vec<Value> = if rule_type == "custom_rule" {
+        let rules: Vec<(String, String, Option<String>, i64, i32, String)> = sqlx::query_as(
             r#"
-            SELECT f.id, f.name, f.pattern, f.action, gr.priority, f.created_at
-            FROM dns_filters f
-            INNER JOIN client_group_rules gr ON f.id = gr.rule_id
-            WHERE gr.group_id = ? AND gr.rule_type = 'filter'
+            SELECT cr.id, cr.rule, cr.comment, cr.is_enabled, gr.priority, cr.created_at
+            FROM custom_rules cr
+            INNER JOIN client_group_rules gr ON cr.id = gr.rule_id
+            WHERE gr.group_id = ? AND gr.rule_type = 'custom_rule'
             ORDER BY gr.priority ASC
             "#,
         )
@@ -628,23 +623,23 @@ pub async fn get_group_rules(
 
         rules
             .into_iter()
-            .map(|(rule_id, name, pattern, action, priority, created_at)| {
+            .map(|(rule_id, rule, comment, is_enabled, priority, created_at)| {
                 json!({
                     "rule_id": rule_id,
-                    "rule_type": "filter",
-                    "name": name,
-                    "pattern": pattern,
-                    "action": action,
+                    "rule_type": "custom_rule",
+                    "rule": rule,
+                    "comment": comment,
+                    "is_enabled": is_enabled == 1,
                     "priority": priority,
                     "created_at": created_at,
                 })
             })
             .collect()
     } else if rule_type == "rewrite" {
-        let rules: Vec<(i64, String, String, Option<String>, String, i32, String)> =
+        let rules: Vec<(String, String, String, i32, String)> =
             sqlx::query_as(
                 r#"
-            SELECT r.id, r.domain, r.replacement, r.description, r.action, gr.priority, r.created_at
+            SELECT r.id, r.domain, r.answer, gr.priority, r.created_at
             FROM dns_rewrites r
             INNER JOIN client_group_rules gr ON r.id = gr.rule_id
             WHERE gr.group_id = ? AND gr.rule_type = 'rewrite'
@@ -657,20 +652,16 @@ pub async fn get_group_rules(
 
         rules
             .into_iter()
-            .map(
-                |(rule_id, domain, replacement, description, action, priority, created_at)| {
-                    json!({
-                        "rule_id": rule_id,
-                        "rule_type": "rewrite",
-                        "name": description.unwrap_or_else(|| domain.clone()),
-                        "domain": domain,
-                        "replacement": replacement,
-                        "action": action,
-                        "priority": priority,
-                        "created_at": created_at,
-                    })
-                },
-            )
+            .map(|(rule_id, domain, answer, priority, created_at)| {
+                json!({
+                    "rule_id": rule_id,
+                    "rule_type": "rewrite",
+                    "domain": domain,
+                    "answer": answer,
+                    "priority": priority,
+                    "created_at": created_at,
+                })
+            })
             .collect()
     } else {
         Vec::new()
@@ -711,22 +702,22 @@ pub async fn batch_bind_rules(
 
     for rule in &body.rules {
         // Validate rule type
-        if rule.rule_type != "filter" && rule.rule_type != "rewrite" {
+        if rule.rule_type != "custom_rule" && rule.rule_type != "rewrite" {
             return Err(AppError::Validation(format!(
-                "Invalid rule type: {}",
+                "Invalid rule type: {} (must be 'custom_rule' or 'rewrite')",
                 rule.rule_type
             )));
         }
 
-        // Check if rule exists
-        let rule_exists: Option<(i64,)> = if rule.rule_type == "filter" {
-            sqlx::query_as("SELECT id FROM dns_filters WHERE id = ?")
-                .bind(rule.rule_id)
+        // Check if rule exists in the appropriate table
+        let rule_exists: Option<(String,)> = if rule.rule_type == "custom_rule" {
+            sqlx::query_as("SELECT id FROM custom_rules WHERE id = ?")
+                .bind(&rule.rule_id)
                 .fetch_optional(&state.db)
                 .await?
         } else {
             sqlx::query_as("SELECT id FROM dns_rewrites WHERE id = ?")
-                .bind(rule.rule_id)
+                .bind(&rule.rule_id)
                 .fetch_optional(&state.db)
                 .await?
         };
@@ -746,7 +737,7 @@ pub async fn batch_bind_rules(
             "SELECT id FROM client_group_rules WHERE group_id = ? AND rule_id = ? AND rule_type = ?",
         )
         .bind(id)
-        .bind(rule.rule_id)
+        .bind(&rule.rule_id)
         .bind(&rule.rule_type)
         .fetch_optional(&state.db)
         .await?;
@@ -767,7 +758,7 @@ pub async fn batch_bind_rules(
             "INSERT INTO client_group_rules (group_id, rule_id, rule_type, priority, created_at) VALUES (?, ?, ?, ?, ?)",
         )
         .bind(id)
-        .bind(rule.rule_id)
+        .bind(&rule.rule_id)
         .bind(&rule.rule_type)
         .bind(priority)
         .bind(&now)
