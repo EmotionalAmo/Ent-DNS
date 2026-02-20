@@ -14,7 +14,9 @@ use std::sync::Arc;
 use crate::api::AppState;
 use crate::api::middleware::auth::AuthUser;
 use crate::error::AppResult;
+use crate::error::AppError;
 use uuid::Uuid;
+use chrono::Utc;
 
 // ============================================================================
 // Data Structures
@@ -62,7 +64,7 @@ pub async fn list(
          WHERE is_public = 1 OR created_by = ?
          ORDER BY created_at DESC"
     )
-    .bind(&auth.username)
+    .bind(&auth.0.username)
     .fetch_all(&state.db)
     .await?;
 
@@ -103,7 +105,7 @@ pub async fn create(
     .bind(&req.name)
     .bind(&filters_json)
     .bind(&logic)
-    .bind(&auth.username)
+    .bind(&auth.0.username)
     .bind(&now)
     .bind(is_public as i64)
     .execute(&state.db)
@@ -114,7 +116,7 @@ pub async fn create(
         name: req.name,
         filters: req.filters,
         logic,
-        created_by: auth.username,
+        created_by: auth.0.username,
         created_at: now,
         is_public,
     }))
@@ -132,10 +134,10 @@ pub async fn get(
          WHERE id = ? AND (is_public = 1 OR created_by = ?)"
     )
     .bind(&id)
-    .bind(&auth.username)
+    .bind(&auth.0.username)
     .fetch_optional(&state.db)
     .await?
-    .ok_or_else(|| anyhow::anyhow!("Template not found or access denied"))?;
+    .ok_or_else(|| AppError::NotFound("Template not found or access denied".to_string()))?;
 
     let (id, name, filters, logic, created_by, created_at, is_public) = row;
     Ok(Json(Template {
@@ -163,37 +165,37 @@ pub async fn update(
     .bind(&id)
     .fetch_optional(&state.db)
     .await?
-    .ok_or_else(|| anyhow::anyhow!("Template not found"))?;
+    .ok_or_else(|| AppError::NotFound("Template not found".to_string()))?;
 
-    if owner.as_ref() != Some(&auth.username) {
-        return Err(anyhow::anyhow!("Access denied: you are not the owner"));
+    if owner.as_ref() != Some(&auth.0.username) {
+        return Err(AppError::Unauthorized("you are not the owner".to_string()));
     }
 
     // 构建动态更新语句
     let mut updates = Vec::new();
-    let mut bindings: Vec<Box<dyn sqlx::Encode<sqlx::Sqlite> + Send + Sync>> = Vec::new();
+    let mut bindings: Vec<String> = Vec::new();
 
     if let Some(name) = req.name {
         updates.push("name = ?");
-        bindings.push(Box::new(name));
+        bindings.push(name);
     }
     if let Some(filters) = req.filters {
         updates.push("filters = ?");
         let filters_json = serde_json::to_string(&filters)
             .map_err(|e| anyhow::anyhow!("Invalid filters JSON: {}", e))?;
-        bindings.push(Box::new(filters_json));
+        bindings.push(filters_json);
     }
     if let Some(logic) = req.logic {
         updates.push("logic = ?");
-        bindings.push(Box::new(logic));
+        bindings.push(logic);
     }
     if let Some(is_public) = req.is_public {
         updates.push("is_public = ?");
-        bindings.push(Box::new(is_public as i64));
+        bindings.push(is_public.to_string());
     }
 
     if updates.is_empty() {
-        return Err(anyhow::anyhow!("No fields to update"));
+        return Err(AppError::Validation("No fields to update".to_string()));
     }
 
     let sql = format!(
@@ -201,11 +203,13 @@ pub async fn update(
         updates.join(", ")
     );
 
-    // Execute update (simplified - in real code would need proper binding)
-    sqlx::query(&sql)
-        .bind(&id)
-        .execute(&state.db)
-        .await?;
+    // Execute update
+    let mut q = sqlx::query(&sql);
+    for binding in bindings {
+        q = q.bind(binding);
+    }
+    q = q.bind(&id);
+    q.execute(&state.db).await?;
 
     // Fetch updated template
     let get_req = get(State(state.clone()), auth, Path(id.clone()));
@@ -224,10 +228,10 @@ pub async fn delete(
     .bind(&id)
     .fetch_optional(&state.db)
     .await?
-    .ok_or_else(|| anyhow::anyhow!("Template not found"))?;
+    .ok_or_else(|| AppError::NotFound("Template not found".to_string()))?;
 
-    if owner.as_ref() != Some(&auth.username) {
-        return Err(anyhow::anyhow!("Access denied: you are not the owner"));
+    if owner.as_ref() != Some(&auth.0.username) {
+        return Err(AppError::Unauthorized("you are not the owner".to_string()));
     }
 
     sqlx::query("DELETE FROM query_log_templates WHERE id = ?")
@@ -237,6 +241,3 @@ pub async fn delete(
 
     Ok(Json(json!({ "message": "Template deleted successfully" })))
 }
-
-// 导入 chrono
-use chrono::Utc;

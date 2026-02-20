@@ -6,6 +6,7 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::{json, Value};
+use sqlx::Row;
 use std::sync::Arc;
 use crate::api::AppState;
 use crate::api::middleware::auth::AuthUser;
@@ -26,6 +27,18 @@ pub struct QueryLogParams {
 fn default_limit() -> i64 {
     100
 }
+
+// Available export fields
+const EXPORT_FIELDS: &[&str] = &[
+    "id", "time", "client_ip", "client_name", "question", "qtype",
+    "answer", "status", "reason", "upstream", "elapsed_ms",
+];
+
+// Default export fields (all except upstream for backward compatibility)
+const DEFAULT_EXPORT_FIELDS: &[&str] = &[
+    "id", "time", "client_ip", "client_name", "question", "qtype",
+    "answer", "status", "reason", "elapsed_ms",
+];
 
 pub async fn list(
     State(state): State<Arc<AppState>>,
@@ -107,10 +120,21 @@ pub async fn list(
 pub struct ExportParams {
     #[serde(default = "default_export_format")]
     format: String,
+    #[serde(default)]
+    fields: Option<String>, // comma-separated field list
+    #[serde(default = "default_export_limit")]
+    limit: i64,
+    // Optional filter support (JSON-encoded filters from advanced filter)
+    #[serde(default)]
+    filters_json: Option<String>,
 }
 
 fn default_export_format() -> String {
     "csv".to_string()
+}
+
+fn default_export_limit() -> i64 {
+    10000
 }
 
 pub async fn export(
@@ -118,22 +142,103 @@ pub async fn export(
     _admin: AdminUser,
     Query(params): Query<ExportParams>,
 ) -> impl IntoResponse {
-    let rows: Vec<(i64, String, String, Option<String>, String, String, Option<String>, String, Option<String>, Option<i64>)> =
-        sqlx::query_as(
-            "SELECT id, time, client_ip, client_name, question, qtype, answer, status, reason, elapsed_ms
-             FROM query_log ORDER BY time DESC LIMIT 10000"
-        )
-        .fetch_all(&state.db)
-        .await
-        .unwrap_or_default();
+    // Parse and validate fields
+    let fields: Vec<String> = if let Some(ref fields_str) = params.fields {
+        fields_str
+            .split(',')
+            .map(|s| s.trim().to_lowercase())
+            .filter(|s| EXPORT_FIELDS.contains(&s.as_str()))
+            .collect()
+    } else {
+        DEFAULT_EXPORT_FIELDS.iter().map(|s| s.to_string()).collect()
+    };
 
+    if fields.is_empty() {
+        return Json(json!({
+            "error": "Invalid fields specified",
+            "available_fields": EXPORT_FIELDS,
+        })).into_response();
+    }
+
+    // Build field list for SQL query
+    let field_list = fields.join(", ");
+
+    // Build WHERE clause if filters provided (advanced export)
+    let (where_clause, where_bindings) = if let Some(ref filters_json) = params.filters_json {
+        // Parse filters JSON and build WHERE clause
+        if let Ok(filters_value) = serde_json::from_str::<Vec<serde_json::Value>>(filters_json) {
+            let mut conditions = Vec::new();
+            let mut bindings = Vec::new();
+
+            for filter_value in filters_value {
+                if let (Some(field), Some(op), Some(value)) = (
+                    filter_value.get("field").and_then(|v| v.as_str()),
+                    filter_value.get("operator").and_then(|v| v.as_str()),
+                    filter_value.get("value"),
+                ) {
+                    // Log and skip unsupported filters
+                    if let Ok((condition, value_bindings)) = build_filter_condition(field, op, value) {
+                        conditions.push(condition);
+                        bindings.extend(value_bindings);
+                    }
+                }
+            }
+
+            if conditions.is_empty() {
+                (String::new(), Vec::new())
+            } else {
+                (format!("WHERE {}", conditions.join(" AND ")), bindings)
+            }
+        } else {
+            (String::new(), Vec::new())
+        }
+    } else {
+        (String::new(), Vec::new())
+    };
+
+    // Build and execute query
+    let sql = format!(
+        "SELECT {} FROM query_log {} ORDER BY time DESC LIMIT ?",
+        field_list, where_clause
+    );
+
+    let rows: Vec<sqlx::sqlite::SqliteRow> = {
+        let mut q = sqlx::query(&sql);
+        for binding in &where_bindings {
+            match binding {
+                serde_json::Value::String(s) => q = q.bind(s),
+                serde_json::Value::Number(n) => q = q.bind(n.as_i64().unwrap_or(0)),
+                _ => {}
+            }
+        }
+        q.bind(params.limit).fetch_all(&state.db).await
+            .unwrap_or_default()
+    };
+
+    // Export based on format
     match params.format.as_str() {
         "json" => {
-            let data: Vec<Value> = rows.into_iter().map(|(id, time, client_ip, client_name, question, qtype, answer, status, reason, elapsed_ms)| {
-                json!({ "id": id, "time": time, "client_ip": client_ip, "client_name": client_name,
-                         "question": question, "qtype": qtype, "answer": answer, "status": status,
-                         "reason": reason, "elapsed_ms": elapsed_ms })
+            let data: Vec<Value> = rows.iter().map(|row| {
+                let mut obj = serde_json::Map::new();
+                for field in &fields {
+                    // Try to get value from row by index/column name
+                    let val: Option<Value> = if let Ok(Some(v)) = row.try_get::<Option<String>, _>(&**field) {
+                        Some(json!(v))
+                    } else if let Ok(Some(v)) = row.try_get::<Option<i64>, _>(&**field) {
+                        Some(json!(v))
+                    } else if let Ok(v) = row.try_get::<String, _>(&**field) {
+                        Some(json!(v))
+                    } else {
+                        None
+                    };
+
+                    if let Some(v) = val {
+                        obj.insert(field.clone(), v);
+                    }
+                }
+                json!(obj)
             }).collect();
+
             let body = serde_json::to_string_pretty(&data).unwrap_or_default();
             (
                 [(header::CONTENT_TYPE, "application/json"),
@@ -142,24 +247,63 @@ pub async fn export(
             ).into_response()
         }
         _ => {
-            let mut csv = String::from("id,time,client_ip,client_name,question,qtype,answer,status,reason,elapsed_ms\n");
-            for (id, time, client_ip, client_name, question, qtype, answer, status, reason, elapsed_ms) in rows {
-                csv.push_str(&format!(
-                    "{},{},{},{},{},{},{},{},{},{}\n",
-                    id, time, client_ip,
-                    client_name.unwrap_or_default(),
-                    question, qtype,
-                    answer.unwrap_or_default(),
-                    status,
-                    reason.unwrap_or_default(),
-                    elapsed_ms.map(|v| v.to_string()).unwrap_or_default(),
-                ));
+            // CSV format
+            let mut csv = String::new();
+            csv.push_str(&fields.join(","));
+            csv.push('\n');
+
+            for row in rows {
+                let values: Vec<String> = fields.iter().map(|field| {
+                    if let Ok(val) = row.try_get::<Option<String>, _>(&**field) {
+                        escape_csv_field(&val.unwrap_or_default())
+                    } else if let Ok(val) = row.try_get::<Option<i64>, _>(&**field) {
+                        val.map(|v| v.to_string()).unwrap_or_default()
+                    } else if let Ok(val) = row.try_get::<String, _>(&**field) {
+                        escape_csv_field(&val)
+                    } else {
+                        String::new()
+                    }
+                }).collect();
+
+                csv.push_str(&values.join(","));
+                csv.push('\n');
             }
+
             (
                 [(header::CONTENT_TYPE, "text/csv; charset=utf-8"),
                  (header::CONTENT_DISPOSITION, "attachment; filename=\"query-logs.csv\"")],
                 csv,
             ).into_response()
         }
+    }
+}
+
+// Build filter condition for export (simplified version)
+fn build_filter_condition(field: &str, op: &str, value: &serde_json::Value) -> Result<(String, Vec<serde_json::Value>), String> {
+    match (field, op) {
+        ("status", "eq") => Ok((format!("{} = ?", field), vec![value.clone()])),
+        ("qtype", "eq") => Ok((format!("{} = ?", field), vec![value.clone()])),
+        ("question", "like") => {
+            let pattern = format!("%{}%", value.as_str().unwrap_or(""));
+            Ok((format!("{} LIKE ?", field), vec![serde_json::Value::String(pattern)]))
+        },
+        ("client_ip", "like") => {
+            let pattern = format!("%{}%", value.as_str().unwrap_or(""));
+            Ok((format!("{} LIKE ?", field), vec![serde_json::Value::String(pattern)]))
+        },
+        ("elapsed_ms", "gt") | ("elapsed_ms", "lt") | ("elapsed_ms", "eq") => {
+            let sql_op = if op == "gt" { ">" } else if op == "lt" { "<" } else { "=" };
+            Ok((format!("{} {} ?", field, sql_op), vec![value.clone()]))
+        },
+        _ => Err(format!("Unsupported filter: {} {}", field, op)),
+    }
+}
+
+// Escape CSV field (handle quotes and commas)
+fn escape_csv_field(value: &str) -> String {
+    if value.contains(',') || value.contains('"') || value.contains('\n') {
+        format!("\"{}\"", value.replace("\"", "\"\""))
+    } else {
+        value.to_string()
     }
 }

@@ -10,6 +10,7 @@ use std::time::Instant;
 use dashmap::DashMap;
 use moka::future::Cache;
 use crate::api::validators::rule::RuleValidationResponse;
+use crate::db::models::client_group::DnsRuleWithSource;
 use crate::config::Config;
 use crate::db::DbPool;
 use crate::dns::filter::FilterEngine;
@@ -36,6 +37,8 @@ pub struct AppState {
     pub dns_handler: Arc<DnsHandler>,
     /// Rule validation cache: (type + rule) → validation result
     pub rule_validation_cache: Arc<Cache<String, RuleValidationResponse>>,
+    /// Client configuration cache: client_id → Vec<DnsRuleWithSource> (Task 12)
+    pub client_config_cache: Option<Arc<Cache<String, Vec<DnsRuleWithSource>>>>,
 }
 
 pub async fn serve(
@@ -56,6 +59,14 @@ pub async fn serve(
             .build()
     );
 
+    // Client configuration cache: 4096 entries, 60 seconds TTL (Task 12)
+    let client_config_cache = Arc::new(
+        Cache::builder()
+            .max_capacity(4096)
+            .time_to_live(std::time::Duration::from_secs(60))
+            .build()
+    );
+
     let state = Arc::new(AppState {
         db,
         filter,
@@ -67,6 +78,7 @@ pub async fn serve(
         login_attempts: DashMap::new(),
         dns_handler,
         rule_validation_cache,
+        client_config_cache: Some(client_config_cache),
     });
     let cors = build_cors_layer(&cfg.api.cors_allowed_origins);
     let app = build_app(state, cors);

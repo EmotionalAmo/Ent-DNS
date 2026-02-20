@@ -15,6 +15,7 @@ import FiltersPage from './pages/Filters';
 import RewritesPage from './pages/Rewrites';
 import QueryLogsPage from './pages/QueryLogs';
 import ClientsPage from './pages/Clients';
+import ClientGroupsPage from './pages/ClientGroups';
 import UsersPage from './pages/Users';
 import SettingsPage from './pages/Settings';
 import UpstreamsPage from './pages/Upstreams';
@@ -116,6 +117,19 @@ function App() {
             }
           >
             <Route index element={<ClientsPage />} />
+          </Route>
+
+          <Route
+            path="/client-groups"
+            element={
+              <ProtectedRoute>
+                <DashboardLayout title="客户端分组">
+                  <Outlet />
+                </DashboardLayout>
+              </ProtectedRoute>
+            }
+          >
+            <Route index element={<ClientGroupsPage />} />
           </Route>
 
           <Route

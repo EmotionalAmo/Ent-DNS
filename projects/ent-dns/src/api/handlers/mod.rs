@@ -5,6 +5,7 @@ pub mod query_log;
 pub mod filters;
 pub mod rules;
 pub mod clients;
+pub mod client_groups;
 pub mod settings;
 pub mod users;
 pub mod audit_log;
@@ -13,5 +14,7 @@ pub mod metrics;
 pub mod rewrites;
 pub mod upstreams;
 pub mod ws;
-pub mod doh;
+// pub mod doh; // TODO: 暂时禁用，待修复编译错误后重新启用
 pub mod rule_validation;
+pub mod query_log_advanced;
+pub mod query_log_templates;

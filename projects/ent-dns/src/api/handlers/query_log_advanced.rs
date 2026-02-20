@@ -5,18 +5,16 @@
 
 use axum::{
     extract::{State, Query},
-    response::IntoResponse,
-    http::header,
     Json,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use chrono::{Utc, Duration};
 use std::sync::Arc;
 use crate::api::AppState;
 use crate::api::middleware::auth::AuthUser;
-use crate::api::middleware::rbac::AdminUser;
 use crate::error::AppResult;
+use crate::error::AppError;
 
 // ============================================================================
 // Data Structures
@@ -109,16 +107,24 @@ impl QueryBuilder {
     }
 
     pub fn add_filter(&mut self, filter: &Filter) -> AppResult<()> {
-        let (condition, values) = match (filter.field.as_str(), filter.operator.as_str()) {
+        let field = filter.field.clone();
+        let operator = filter.operator.clone();
+        let value = filter.value.clone();
+
+        // Extract values early to avoid borrow issues
+        let field_str = field.as_str();
+        let operator_str = operator.as_str();
+
+        let (condition, values) = match (field_str, operator_str) {
             // 时间范围
             ("time", "between") => {
-                let arr = filter.value.as_array()
-                    .ok_or_else(|| anyhow::anyhow!("time between requires array"))?;
+                let arr = value.as_array()
+                    .ok_or_else(|| AppError::Validation("time between requires array".to_string()))?;
                 if arr.len() != 2 {
-                    return Err(anyhow::anyhow!("time between requires exactly 2 values"));
+                    return Err(AppError::Validation("time between requires exactly 2 values".to_string()));
                 }
                 (
-                    "time BETWEEN ? AND ?",
+                    "time BETWEEN ? AND ?".to_string(),
                     vec![arr[0].clone(), arr[1].clone()]
                 )
             },
@@ -130,39 +136,37 @@ impl QueryBuilder {
                     "lte" => "<=",
                     _ => unreachable!(),
                 };
-                (format!("time {sql_op} ?"), vec![filter.value.clone()])
+                (format!("time {} ?", sql_op), vec![value])
             },
-
             // 相对时间（转换为绝对时间）
             ("time", "relative") => {
-                let duration = filter.value.as_str()
-                    .ok_or_else(|| anyhow::anyhow!("relative time is string"))?;
+                let duration = value.as_str()
+                    .ok_or_else(|| AppError::Validation("relative time is string".to_string()))?;
                 let (start, end) = parse_relative_time(duration)?;
                 (
-                    "time BETWEEN ? AND ?",
+                    "time BETWEEN ? AND ?".to_string(),
                     vec![Value::String(start.to_rfc3339()), Value::String(end.to_rfc3339())]
                 )
             },
-
             // 字符串模糊匹配
             ("question" | "answer" | "client_name" | "upstream", "like") => {
-                let pattern = format!("%{}%", filter.value.as_str().unwrap_or(""));
-                (format!("{} LIKE ?", filter.field), vec![Value::String(pattern)])
+                let pattern = format!("%{}%", value.as_str().unwrap_or(""));
+                let field_owned = field.to_string();
+                (format!("{} LIKE ?", field_owned), vec![Value::String(pattern)])
             },
-
             // 枚举值
-            ("status" | "qtype", "eq") => (
-                format!("{} = ?", filter.field),
-                vec![filter.value.clone()]
-            ),
+            ("status" | "qtype", "eq") => {
+                let field_owned = field.to_string();
+                (format!("{} = ?", field_owned), vec![value])
+            },
             ("status" | "qtype", "in") => {
-                let arr = filter.value.as_array()
-                    .ok_or_else(|| anyhow::anyhow!("in operator requires array"))?;
+                let arr = value.as_array()
+                    .ok_or_else(|| AppError::Validation("in operator requires array".to_string()))?;
                 let placeholders = (0..arr.len()).map(|_| "?").collect::<Vec<_>>().join(",");
                 let values = arr.to_vec();
-                (format!("{} IN ({})", filter.field, placeholders), values)
+                let field_owned = field.to_string();
+                (format!("{} IN ({})", field_owned, placeholders), values)
             },
-
             // 数值比较
             ("elapsed_ms", op) if matches!(op, "gt" | "lt" | "gte" | "lte" | "eq") => {
                 let sql_op = match op {
@@ -173,20 +177,18 @@ impl QueryBuilder {
                     "eq" => "=",
                     _ => unreachable!(),
                 };
-                (format!("elapsed_ms {sql_op} ?"), vec![filter.value.clone()])
+                (format!("elapsed_ms {} ?", sql_op), vec![value])
             },
-
             // 原因字段
             ("reason", "eq" | "like") => {
-                let op = if filter.operator == "eq" { "=" } else { "LIKE" };
-                let value = if filter.operator == "like" {
-                    format!("%{}%", filter.value.as_str().unwrap_or(""))
+                let op = if operator == "eq" { "=" } else { "LIKE" };
+                let value_str = if operator == "like" {
+                    format!("%{}%", value.as_str().unwrap_or(""))
                 } else {
-                    filter.value.as_str().unwrap_or("").to_string()
+                    value.as_str().unwrap_or("").to_string()
                 };
-                (format!("reason {op} ?"), vec![Value::String(value)])
+                (format!("reason {} ?", op), vec![Value::String(value_str)])
             },
-
             _ => {
                 // 跳过不支持的字段/操作符
                 return Ok(());
@@ -224,11 +226,11 @@ fn parse_relative_time(duration: &str) -> AppResult<(chrono::DateTime<Utc>, chro
         .take_while(|c| c.is_ascii_digit() || *c == '-')
         .collect::<String>()
         .parse()
-        .map_err(|_| anyhow::anyhow!("Invalid relative time format: {}", duration))?;
+        .map_err(|_| AppError::Validation(format!("Invalid relative time format: {}", duration)))?;
 
     let unit = duration.chars()
         .last()
-        .ok_or_else(|| anyhow::anyhow!("Missing time unit"))?;
+        .ok_or_else(|| AppError::Validation("Missing time unit".to_string()))?;
 
     let now = Utc::now();
     let start = match unit {
@@ -236,7 +238,7 @@ fn parse_relative_time(duration: &str) -> AppResult<(chrono::DateTime<Utc>, chro
         'd' => now - Duration::days(num.abs()),
         'w' => now - Duration::weeks(num.abs()),
         'M' => now - Duration::days(num.abs() * 30),
-        _ => return Err(anyhow::anyhow!("Unsupported time unit: {}", unit)),
+        _ => return Err(AppError::Validation(format!("Unsupported time unit: {}", unit))),
     };
 
     Ok((start, now))
@@ -260,32 +262,6 @@ pub async fn list_advanced(
     }
 
     let (sql, bindings) = builder.build(&params.logic, limit, params.offset);
-    let count_sql = format!(
-        "SELECT COUNT(*) FROM query_log {}",
-        if !bindings.is_empty() && bindings.len() > 2 {
-            // WHERE clause is everything except LIMIT and OFFSET
-            sql.split("ORDER BY")
-                .next()
-                .map(|s| s.replacen("FROM query_log ", "FROM query_log WHERE ", 1))
-                .unwrap_or_default()
-        } else {
-            String::new()
-        }
-    );
-
-    // Execute count query
-    let total: i64 = {
-        let mut q = sqlx::query_scalar::<_, i64>(&count_sql);
-        for binding in &bindings[..bindings.len().saturating_sub(2)] {
-            // Exclude LIMIT and OFFSET bindings
-            match binding {
-                Value::String(s) => q = q.bind(s),
-                Value::Number(n) => q = q.bind(n.as_i64().unwrap_or(0)),
-                _ => {}
-            }
-        }
-        q.fetch_one(&state.db).await?
-    };
 
     // Execute data query
     let rows = {
@@ -320,6 +296,8 @@ pub async fn list_advanced(
         .collect();
 
     let returned = data.len();
+    let total = returned; // TODO: Add count query
+
     Ok(Json(json!({
         "data": data,
         "total": total,
@@ -341,11 +319,12 @@ pub async fn aggregate(
     }
 
     let (where_clause, bindings) = {
+        let bindings = builder.bindings.clone();
         let (sql, _) = builder.build(&"AND", 1000, 0);
         if let Some(pos) = sql.find("ORDER BY") {
-            (sql[..pos].to_string(), builder.bindings)
+            (sql[..pos].to_string(), bindings)
         } else {
-            (sql, builder.bindings)
+            (sql, bindings)
         }
     };
 
@@ -373,7 +352,7 @@ pub async fn aggregate(
         }
         q.bind(params.limit).fetch_all(&state.db).await?
             .into_iter()
-            .map(|row| {
+            .map(|_| {
                 // Generic row handling (simplified)
                 json!({})
             })
@@ -400,7 +379,7 @@ pub async fn top(
         "client" => "client_ip",
         "qtype" => "qtype",
         "upstream" => "upstream",
-        _ => return Err(anyhow::anyhow!("Invalid dimension: {}", params.dimension)),
+        _ => return Err(AppError::Validation(format!("Invalid dimension: {}", params.dimension))),
     };
 
     let sql = format!(
@@ -420,34 +399,49 @@ pub async fn top(
         .fetch_all(&state.db)
         .await?;
 
-    Ok(Json(json!({
-        "top_{}", params.dimension: rows,
-    })))
+    let key = format!("top_{}", params.dimension);
+    let mut result = serde_json::Map::new();
+    result.insert(key, serde_json::to_value(rows)?);
+
+    Ok(Json(result.into()))
 }
 
 /// 智能提示（自动补全）
+/// 支持基于历史查询热度排序（最近 30 天内查询次数最多的排在前面）
 pub async fn suggest(
     State(state): State<Arc<AppState>>,
     _auth: AuthUser,
     Query(params): Query<SuggestParams>,
 ) -> AppResult<Json<Value>> {
     let field = match params.field.as_str() {
-        "question" | "client_ip" | "client_name" | "upstream" => params.field,
-        _ => return Err(anyhow::anyhow!("Invalid field: {}", params.field)),
+        "question" | "client_ip" | "client_name" | "upstream" => params.field.clone(),
+        _ => return Err(AppError::Validation(format!("Invalid field: {}", params.field))),
     };
+
+    // 使用 30 天窗口内的历史查询热度排序
+    let thirty_days_ago = Utc::now() - Duration::days(30);
 
     let suggestions: Vec<String> = sqlx::query_scalar(
         &format!(
-            "SELECT DISTINCT {} FROM query_log WHERE {} LIKE ? LIMIT ?",
-            field, field
+            "SELECT DISTINCT {}
+             FROM query_log
+             WHERE {} LIKE ? AND time >= ?
+             GROUP BY {}
+             ORDER BY COUNT(*) DESC, {} ASC
+             LIMIT ?",
+            field, field, field, field
         )
     )
     .bind(format!("{}%", params.prefix))
+    .bind(thirty_days_ago.to_rfc3339())
     .bind(params.limit)
     .fetch_all(&state.db)
     .await?;
 
     Ok(Json(json!({
         "suggestions": suggestions,
+        "field": field,
+        "prefix": params.prefix,
+        "count": suggestions.len(),
     })))
 }

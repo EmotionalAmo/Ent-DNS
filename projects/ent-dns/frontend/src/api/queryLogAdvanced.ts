@@ -65,6 +65,13 @@ export interface QueryLogListResponse {
   queryMs?: number;
 }
 
+export interface SuggestionResponse {
+  suggestions: string[];
+  field: string;
+  prefix: string;
+  count: number;
+}
+
 export const queryLogAdvancedApi = {
   // ===== 高级查询 =====
   list: async (params: AdvancedQueryParams): Promise<QueryLogListResponse> => {
@@ -118,4 +125,12 @@ export const queryLogAdvancedApi = {
       await apiClient.delete(`/query-log/templates/${id}`);
     },
   },
+};
+
+// Export for useSuggestions hook
+export const fetchSuggestions = async (field: string, prefix: string): Promise<SuggestionResponse> => {
+  const response = await apiClient.get('/query-log/suggest', {
+    params: { field, prefix, limit: 10 },
+  });
+  return response.data;
 };

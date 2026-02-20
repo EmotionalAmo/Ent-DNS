@@ -4,6 +4,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { AutocompleteInput } from './AutocompleteInput';
 
 export interface Filter {
   field: string;
@@ -156,7 +157,22 @@ function ValueInput({ field, operator, value, onChange }: { field: string; opera
     );
   }
 
-  // 默认文本输入
+  // 默认文本输入（支持自动补全）
+  const autocompleteField = field as 'question' | 'client_ip' | 'client_name' | 'upstream';
+  const shouldAutocomplete = ['question', 'client_ip', 'client_name', 'upstream'].includes(field);
+
+  if (shouldAutocomplete) {
+    return (
+      <AutocompleteInput
+        field={autocompleteField}
+        value={value}
+        onChange={onChange}
+        placeholder="输入值..."
+        className="flex-1 min-w-[200px]"
+      />
+    );
+  }
+
   return (
     <Input
       type="text"

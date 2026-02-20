@@ -14,6 +14,9 @@ pub enum AppError {
     #[error("Not found: {0}")]
     NotFound(String),
 
+    #[error("Conflict: {0}")]
+    Conflict(String),
+
     #[error("Validation error: {0}")]
     Validation(String),
 
@@ -22,6 +25,9 @@ pub enum AppError {
 
     #[error("JSON error: {0}")]
     Json(#[from] serde_json::Error),
+
+    #[error("Error: {0}")]
+    Anyhow(#[from] anyhow::Error),
 
     #[error("Too many requests")]
     TooManyRequests,
@@ -37,6 +43,7 @@ impl axum::response::IntoResponse for AppError {
             AppError::AuthFailed => (StatusCode::UNAUTHORIZED, self.to_string()),
             AppError::Unauthorized(_) => (StatusCode::FORBIDDEN, self.to_string()),
             AppError::NotFound(_) => (StatusCode::NOT_FOUND, self.to_string()),
+            AppError::Conflict(_) => (StatusCode::CONFLICT, self.to_string()),
             AppError::Validation(_) => (StatusCode::BAD_REQUEST, self.to_string()),
             AppError::TooManyRequests => (StatusCode::TOO_MANY_REQUESTS, self.to_string()),
             _ => (StatusCode::INTERNAL_SERVER_ERROR, "Internal server error".to_string()),

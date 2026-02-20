@@ -3,6 +3,7 @@ import { Plus, Play, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { FilterRow, Filter, QuickFilters } from './FilterRow';
+import { TemplateManager } from './TemplateManager';
 
 interface FilterBuilderProps {
   onSearch: (filters: Filter[]) => void;
@@ -88,6 +89,9 @@ export function FilterBuilder({ onSearch, isLoading }: FilterBuilderProps) {
             <Plus size={14} className="mr-1" />
             添加条件
           </Button>
+
+          {/* Template manager */}
+          <TemplateManager currentFilters={filters} onLoadTemplate={applyQuickFilter} />
 
           <div className="flex-1" />
 
