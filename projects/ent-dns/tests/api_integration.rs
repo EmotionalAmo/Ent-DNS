@@ -17,6 +17,7 @@ use axum::{
     body::Body,
     http::{Request, StatusCode, header},
 };
+use moka::future::Cache as MokaCache;
 use serde_json::Value;
 use sqlx::SqlitePool;
 use std::net::SocketAddr;
@@ -30,6 +31,7 @@ use http_body_util::BodyExt; // for .collect()
 // ── 内部 crate 引用 ────────────────────────────────────────────────────────────
 // 集成测试与被测试 crate 在同一 workspace，直接引用
 use ent_dns::api::{AppState, build_app};
+use ent_dns::api::validators::rule::RuleValidationResponse;
 use ent_dns::dns::filter::FilterEngine;
 use ent_dns::metrics::DnsMetrics;
 
@@ -125,6 +127,7 @@ async fn build_test_app() -> (axum::Router, Arc<AppState>) {
         },
         database: ent_dns::config::DatabaseConfig {
             path: ":memory:".to_string(),
+            query_log_retention_days: 7,
         },
         auth: ent_dns::config::AuthConfig {
             jwt_secret: "test-jwt-secret-for-integration-tests-only-32chars".to_string(),
@@ -153,6 +156,13 @@ async fn build_test_app() -> (axum::Router, Arc<AppState>) {
         ws_tickets: DashMap::new(),
         login_attempts: DashMap::new(),
         dns_handler,
+        rule_validation_cache: Arc::new(
+            MokaCache::<String, RuleValidationResponse>::builder()
+                .max_capacity(1000)
+                .time_to_live(std::time::Duration::from_secs(300))
+                .build(),
+        ),
+        client_config_cache: None,
     });
 
     // CORS 层用空配置（测试中不需要）
