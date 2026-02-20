@@ -22,6 +22,7 @@ import {
   Monitor,
   Server,
   FolderTree,
+  KeyRound,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -150,13 +151,22 @@ export function DashboardLayout({ title }: DashboardLayoutProps) {
                 {user?.role ?? 'user'}
               </p>
             </div>
-            <button
-              onClick={handleLogout}
-              title="退出登录"
-              className="shrink-0 rounded-md p-1 text-white/40 transition-colors hover:text-white"
-            >
-              <LogOut size={15} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => navigate('/change-password')}
+                title="修改密码"
+                className="shrink-0 rounded-md p-1 text-white/40 transition-colors hover:text-white"
+              >
+                <KeyRound size={15} />
+              </button>
+              <button
+                onClick={handleLogout}
+                title="退出登录"
+                className="shrink-0 rounded-md p-1 text-white/40 transition-colors hover:text-white"
+              >
+                <LogOut size={15} />
+              </button>
+            </div>
           </div>
         </div>
       </aside>

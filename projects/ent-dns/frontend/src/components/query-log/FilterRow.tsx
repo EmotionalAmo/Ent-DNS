@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Clock, Globe, Hash, Zap, Shield, X } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
@@ -31,19 +30,6 @@ const FIELD_OPTIONS = [
   { value: 'upstream', label: '上游', icon: Globe },
   { value: 'elapsed_ms', label: '响应时间', icon: Clock },
 ];
-
-// 操作符定义
-const OPERATOR_CONFIG: Record<string, { label: string; inputType: 'select' | 'text' | 'number' | 'date-range' | 'relative-time' }> = {
-  eq: { label: '等于', inputType: 'text' },
-  gt: { label: '大于', inputType: 'number' },
-  lt: { label: '小于', inputType: 'number' },
-  gte: { label: '大于等于', inputType: 'number' },
-  lte: { label: '小于等于', inputType: 'number' },
-  between: { label: '介于', inputType: 'date-range' },
-  in: { label: '包含', inputType: 'select' },
-  like: { label: '模糊匹配', inputType: 'text' },
-  relative: { label: '相对时间', inputType: 'relative-time' },
-};
 
 // 根据字段获取可用操作符
 function getOperatorsForField(field: string) {
@@ -185,9 +171,6 @@ function ValueInput({ field, operator, value, onChange }: { field: string; opera
 }
 
 export function FilterRow({ filter, index, onChange, onRemove }: FilterRowProps) {
-  const field = FIELD_OPTIONS.find(f => f.value === filter.field);
-  const Icon = field?.icon;
-
   return (
     <div className="flex gap-2 items-start">
       {/* 逻辑连接符（除了第一行） */}
@@ -237,7 +220,7 @@ export function FilterRow({ filter, index, onChange, onRemove }: FilterRowProps)
       {/* 删除按钮 */}
       <Button
         variant="ghost"
-        size="icon-sm"
+        size="icon"
         onClick={() => onRemove(index)}
         className="h-9 w-9 text-muted-foreground hover:text-destructive"
       >

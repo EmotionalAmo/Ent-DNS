@@ -3,17 +3,16 @@
 // Author: ui-duarte (Matías Duarte)
 // Design Principle: Bold - Clear visual hierarchy + intentional actions
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { FolderOpen, Save, Trash2, Copy, Plus, ChevronRight, ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { queryLogAdvancedApi, Template, Filter } from '@/api/queryLogAdvanced';
-import { toast } from '@/components/ui/use-toast';
-import { cn } from '@/lib/utils';
+import { queryLogAdvancedApi, type Template, type Filter } from '@/api/queryLogAdvanced';
+import { toast } from 'sonner';
+// import { cn } from '@/lib/utils';
 
 interface TemplateManagerProps {
   currentFilters: Filter[];
@@ -42,16 +41,11 @@ export function TemplateManager({ currentFilters, onLoadTemplate }: TemplateMana
       setSaveDialogOpen(false);
       setTemplateName('');
       setIsPublic(false);
-      toast({
-        title: '模板已保存',
-        description: '查询模板已成功保存',
-      });
+      toast.success('模板已保存');
     },
     onError: (error: any) => {
-      toast({
-        title: '保存失败',
+      toast.error('保存失败', {
         description: error.response?.data?.message || '未知错误',
-        variant: 'destructive',
       });
     },
   });
@@ -60,27 +54,18 @@ export function TemplateManager({ currentFilters, onLoadTemplate }: TemplateMana
     mutationFn: (id: string) => queryLogAdvancedApi.templates.delete(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['query-log-templates'] });
-      toast({
-        title: '模板已删除',
-        description: '查询模板已成功删除',
-      });
+      toast.success('模板已删除');
     },
     onError: (error: any) => {
-      toast({
-        title: '删除失败',
+      toast.error('删除失败', {
         description: error.response?.data?.message || '未知错误',
-        variant: 'destructive',
       });
     },
   });
 
   const handleSaveTemplate = () => {
     if (!templateName.trim()) {
-      toast({
-        title: '请输入模板名称',
-        description: '模板名称不能为空',
-        variant: 'destructive',
-      });
+      toast.error('请输入模板名称');
       return;
     }
 
@@ -95,20 +80,14 @@ export function TemplateManager({ currentFilters, onLoadTemplate }: TemplateMana
   const handleLoadTemplate = (template: Template) => {
     onLoadTemplate(template.filters);
     setIsOpen(false);
-    toast({
-      title: '模板已加载',
-      description: `已加载模板：${template.name}`,
-    });
+    toast.success(`已加载模板：${template.name}`);
   };
 
   const handleDuplicateTemplate = (e: React.MouseEvent, template: Template) => {
     e.stopPropagation();
     const newFilters = [...template.filters];
     onLoadTemplate(newFilters);
-    toast({
-      title: '模板已复制',
-      description: `已复制模板：${template.name}`,
-    });
+    toast.success(`已复制模板：${template.name}`);
   };
 
   const handleDeleteTemplate = (e: React.MouseEvent, id: string) => {
@@ -120,22 +99,21 @@ export function TemplateManager({ currentFilters, onLoadTemplate }: TemplateMana
 
   return (
     <>
-      {/* Template selector popover */}
-      <Popover open={isOpen} onOpenChange={setIsOpen}>
-        <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" className="gap-2">
-            <FolderOpen size={14} />
-            模板
-            <span className="text-xs text-muted-foreground">({templates.length})</span>
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-96 max-h-[500px] overflow-y-auto p-0">
-          {/* Header */}
-          <div className="sticky top-0 bg-background border-b p-3">
+      {/* Template selector button */}
+      <Button variant="outline" size="sm" onClick={() => setIsOpen(true)} className="gap-2">
+        <FolderOpen size={14} />
+        模板
+        <span className="text-xs text-muted-foreground">({templates.length})</span>
+      </Button>
+
+      {/* Template selector dialog */}
+      <Dialog open={isOpen} onOpenChange={setIsOpen}>
+        <DialogContent className="max-w-2xl max-h-[600px] overflow-y-auto">
+          <DialogHeader>
             <div className="flex items-center justify-between">
-              <h4 className="font-medium text-sm">查询模板</h4>
+              <DialogTitle>查询模板</DialogTitle>
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
                 onClick={() => setSaveDialogOpen(true)}
                 className="gap-1"
@@ -144,10 +122,10 @@ export function TemplateManager({ currentFilters, onLoadTemplate }: TemplateMana
                 新建
               </Button>
             </div>
-          </div>
+          </DialogHeader>
 
           {/* Template list */}
-          <div className="p-2">
+          <div className="py-4">
             {isLoading ? (
               <div className="py-8 text-center text-sm text-muted-foreground">
                 加载中...
@@ -157,7 +135,7 @@ export function TemplateManager({ currentFilters, onLoadTemplate }: TemplateMana
                 暂无模板，点击"新建"创建第一个模板
               </div>
             ) : (
-              <div className="space-y-1">
+              <div className="space-y-2">
                 {templates.map((template) => {
                   const isExpanded = expandedId === template.id;
                   return (
@@ -170,20 +148,20 @@ export function TemplateManager({ currentFilters, onLoadTemplate }: TemplateMana
                         onClick={() => {
                           setExpandedId(isExpanded ? null : template.id);
                         }}
-                        className="w-full px-3 py-2 flex items-center justify-between text-left hover:bg-muted/50 transition-colors"
+                        className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-muted/50 transition-colors"
                       >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
                           {isExpanded ? (
-                            <ChevronDown size={14} className="text-muted-foreground shrink-0" />
+                            <ChevronDown size={16} className="text-muted-foreground shrink-0" />
                           ) : (
-                            <ChevronRight size={14} className="text-muted-foreground shrink-0" />
+                            <ChevronRight size={16} className="text-muted-foreground shrink-0" />
                           )}
                           <div className="flex-1 min-w-0">
                             <span className="text-sm font-medium truncate">{template.name}</span>
-                            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                            <div className="flex items-center gap-2 text-xs text-muted-foreground mt-1">
                               <span>{template.filters.length} 个条件</span>
                               {template.isPublic && (
-                                <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded">
+                                <span className="bg-primary/10 text-primary px-2 py-0.5 rounded">
                                   公开
                                 </span>
                               )}
@@ -193,49 +171,49 @@ export function TemplateManager({ currentFilters, onLoadTemplate }: TemplateMana
                         <div className="flex items-center gap-1">
                           <Button
                             variant="ghost"
-                            size="icon-sm"
+                            size="icon"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleLoadTemplate(template);
                             }}
                             title="加载模板"
                           >
-                            <FolderOpen size={12} />
+                            <FolderOpen size={14} />
                           </Button>
                           <Button
                             variant="ghost"
-                            size="icon-sm"
+                            size="icon"
                             onClick={(e) => handleDuplicateTemplate(e, template)}
                             title="复制模板"
                           >
-                            <Copy size={12} />
+                            <Copy size={14} />
                           </Button>
                           <Button
                             variant="ghost"
-                            size="icon-sm"
+                            size="icon"
                             onClick={(e) => handleDeleteTemplate(e, template.id)}
                             title="删除模板"
                             className="text-destructive hover:text-destructive"
                           >
-                            <Trash2 size={12} />
+                            <Trash2 size={14} />
                           </Button>
                         </div>
                       </button>
 
                       {/* Expanded details */}
                       {isExpanded && (
-                        <div className="px-3 py-2 bg-muted/30 border-t text-xs space-y-1">
+                        <div className="px-4 py-3 bg-muted/30 border-t text-xs space-y-2">
                           <div className="text-muted-foreground">创建者：{template.createdBy}</div>
                           <div className="text-muted-foreground">
                             创建时间：{new Date(template.createdAt).toLocaleString('zh-CN')}
                           </div>
                           <div className="mt-2">
                             <div className="font-medium mb-1">过滤器：</div>
-                            <ul className="space-y-0.5 pl-2">
+                            <ul className="space-y-1 pl-2">
                               {template.filters.map((filter, index) => (
                                 <li key={index} className="text-muted-foreground">
-                                  {filter.field} {filter.operator} {String(filter.value).substring(0, 30)}
-                                  {String(filter.value).length > 30 && '...'}
+                                  {filter.field} {filter.operator} {String(filter.value).substring(0, 40)}
+                                  {String(filter.value).length > 40 && '...'}
                                 </li>
                               ))}
                             </ul>
@@ -248,8 +226,8 @@ export function TemplateManager({ currentFilters, onLoadTemplate }: TemplateMana
               </div>
             )}
           </div>
-        </PopoverContent>
-      </Popover>
+        </DialogContent>
+      </Dialog>
 
       {/* Save template dialog */}
       <Dialog open={saveDialogOpen} onOpenChange={setSaveDialogOpen}>

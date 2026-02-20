@@ -3,7 +3,7 @@
 // Author: ui-duarte
 // Date: 2026-02-20
 
-import { apiClient } from './client';
+import apiClient from './client';
 
 export interface Filter {
   field: string;

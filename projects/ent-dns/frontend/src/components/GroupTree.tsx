@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { type ClientGroup } from '@/api/clientGroups';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';

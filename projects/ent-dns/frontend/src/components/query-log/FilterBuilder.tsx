@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Plus, Play, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { FilterRow, Filter, QuickFilters } from './FilterRow';
+import { FilterRow, type Filter, QuickFilters } from './FilterRow';
 import { TemplateManager } from './TemplateManager';
 
 interface FilterBuilderProps {

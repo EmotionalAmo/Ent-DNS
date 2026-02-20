@@ -5,7 +5,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { fetchSuggestions, SuggestionResponse } from '@/api/queryLogAdvanced';
+import { fetchSuggestions, type SuggestionResponse } from '@/api/queryLogAdvanced';
 
 // Cache with 5-minute TTL
 const CACHE_TTL_MS = 5 * 60 * 1000;
@@ -14,7 +14,7 @@ const suggestionCache = new Map<string, { data: string[]; timestamp: number }>()
 export function useSuggestions(field: string) {
   const [prefix, setPrefix] = useState('');
   const [debouncedPrefix, setDebouncedPrefix] = useState('');
-  const timeoutRef = useRef<NodeJS.Timeout>();
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
 
   // 300ms debouncing
   useEffect(() => {

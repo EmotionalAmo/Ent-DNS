@@ -1,4 +1,4 @@
-import { apiClient } from './client';
+import apiClient from './client';
 
 /**
  * 客户端分组数据模型
@@ -68,7 +68,7 @@ export interface GroupRule {
  * 绑定规则请求
  */
 export interface BindRuleRequest {
-  rule_id: number;
+  rule_id: string;
   rule_type: string;
   priority?: number;
 }
@@ -107,7 +107,7 @@ export interface BatchMoveClientsRequest {
  * 批量解绑规则请求
  */
 export interface BatchUnbindRulesRequest {
-  rule_ids: number[];
+  rule_ids: string[];
   rule_type: string;
 }
 
@@ -138,7 +138,7 @@ export const clientGroupsApi = {
    */
   async list(): Promise<ClientGroup[]> {
     const response = await apiClient.get<{ data: ClientGroup[]; total: number }>('/client-groups');
-    return response.data;
+    return response.data.data;
   },
 
   /**
@@ -146,7 +146,7 @@ export const clientGroupsApi = {
    */
   async create(data: CreateClientGroupRequest): Promise<ClientGroup> {
     const response = await apiClient.post<ClientGroup>('/client-groups', data);
-    return response;
+    return response.data;
   },
 
   /**
@@ -154,7 +154,7 @@ export const clientGroupsApi = {
    */
   async update(id: number, data: UpdateClientGroupRequest): Promise<ClientGroup> {
     const response = await apiClient.put<ClientGroup>(`/client-groups/${id}`, data);
-    return response;
+    return response.data;
   },
 
   /**
@@ -170,9 +170,9 @@ export const clientGroupsApi = {
   async getMembers(id: number, params?: PageParams): Promise<PaginatedResponse<ClientGroupMember>> {
     const response = await apiClient.get<PaginatedResponse<ClientGroupMember>>(
       `/client-groups/${id}/members`,
-      params
+      { params }
     );
-    return response;
+    return response.data;
   },
 
   /**
@@ -197,11 +197,12 @@ export const clientGroupsApi = {
     id: number,
     data: BatchRemoveClientsRequest
   ): Promise<{ message: string; removed_count: number }> {
-    return apiClient.request<{ message: string; removed_count: number }>({
+    const response = await apiClient.request<{ message: string; removed_count: number }>({
       method: 'DELETE',
       url: `/client-groups/${id}/members`,
       data,
     });
+    return response.data;
   },
 
   /**
@@ -220,7 +221,11 @@ export const clientGroupsApi = {
    * 获取分组规则
    */
   async getRules(id: number, params?: { rule_type?: string }): Promise<{ data: GroupRule[]; total: number }> {
-    return apiClient.get<{ data: GroupRule[]; total: number }>(`/client-groups/${id}/rules`, params);
+    const response = await apiClient.get<{ data: GroupRule[]; total: number }>(
+      `/client-groups/${id}/rules`,
+      { params }
+    );
+    return response.data;
   },
 
   /**
@@ -232,7 +237,8 @@ export const clientGroupsApi = {
     skipped_count: number;
     skipped_rules: any[];
   }> {
-    return apiClient.post(`/client-groups/${id}/rules`, data);
+    const response = await apiClient.post(`/client-groups/${id}/rules`, data);
+    return response.data;
   },
 
   /**
@@ -242,11 +248,12 @@ export const clientGroupsApi = {
     id: number,
     data: BatchUnbindRulesRequest
   ): Promise<{ message: string; unbound_count: number }> {
-    return apiClient.request<{ message: string; unbound_count: number }>({
+    const response = await apiClient.request<{ message: string; unbound_count: number }>({
       method: 'DELETE',
       url: `/client-groups/${id}/rules`,
       params: { rule_type: data.rule_type },
       data: { rule_ids: data.rule_ids },
     });
+    return response.data;
   },
 };

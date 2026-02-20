@@ -7,9 +7,9 @@ import { useState } from 'react';
 import { Download, FileSpreadsheet, FileJson, ChevronDown, ChevronUp, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
-import { Filter } from '@/components/query-log/FilterRow';
+import type { Filter } from '@/components/query-log/FilterRow';
 import { cn } from '@/lib/utils';
 
 interface ExportDialogProps {
@@ -84,7 +84,7 @@ export function ExportDialog({ isOpen, onClose, filters, estimatedCount }: Expor
   };
 
   const formatLabel = format === 'csv' ? 'CSV (表格)' : 'JSON (数据)';
-  const FormatIcon = format === 'csv' ? FileSpreadsheet : FileJson;
+  // const FormatIcon = format === 'csv' ? FileSpreadsheet : FileJson;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>

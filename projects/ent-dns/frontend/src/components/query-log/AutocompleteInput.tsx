@@ -3,8 +3,8 @@
 // Author: ui-duarte (Matías Duarte)
 // Design Principle: Graphic - Visual feedback + intentional design
 
-import { useState, useRef, useEffect, KeyboardEvent } from 'react';
-import { ChevronDown, X } from 'lucide-react';
+import { useState, useRef, useEffect, type KeyboardEvent } from 'react';
+import { X } from 'lucide-react';
 import { useSuggestions } from '@/hooks/useSuggestions';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';

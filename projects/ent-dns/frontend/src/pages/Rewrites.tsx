@@ -45,7 +45,6 @@ import {
   Clock,
   ExternalLink,
   Copy,
-  CheckCircle2,
 } from 'lucide-react';
 import type { Rewrite, CreateRewriteRequest } from '@/api/types';
 
@@ -145,7 +144,6 @@ function CreateRewriteDialog({
     domain: rewrite?.domain || '',
     answer: rewrite?.answer || '',
   });
-  const [copied, setCopied] = useState(false);
 
   const createMutation = useMutation({
     mutationFn: rewritesApi.createRewrite,
@@ -203,13 +201,6 @@ function CreateRewriteDialog({
 
   const handleSelectCommonRewrite = (item: { domain: string; ip: string }) => {
     setFormData({ domain: item.domain, answer: item.ip });
-  };
-
-  const handleCopyToClipboard = () => {
-    navigator.clipboard.writeText(formData.domain);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-    toast.success('域名已复制到剪贴板');
   };
 
   return (

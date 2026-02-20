@@ -31,7 +31,6 @@ export function ClientList({
   const [searchQuery, setSearchQuery] = useState('');
 
   const allSelected = clients.length > 0 && selectedClientIds.length === clients.length;
-  const someSelected = selectedClientIds.length > 0 && selectedClientIds.length < clients.length;
 
   const filteredClients = clients.filter(
     (client) =>

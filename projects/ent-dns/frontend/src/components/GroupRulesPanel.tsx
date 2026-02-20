@@ -21,7 +21,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { cn } from '@/lib/utils';
-import { Trash2, Plus, Filter2, ArrowRightCircle } from 'lucide-react';
+import { Trash2, Plus, Filter, ArrowRightCircle } from 'lucide-react';
 
 interface GroupRulesPanelProps {
   group: ClientGroup | null;
@@ -40,7 +40,6 @@ export function GroupRulesPanel({
   onBindRule,
   onUnbindRule,
   availableFilters = [],
-  availableRewrites = [],
 }: GroupRulesPanelProps) {
   const [showDeleteDialog, setShowDeleteDialog] = useState<{
     rule: GroupRule | null;
@@ -52,7 +51,7 @@ export function GroupRulesPanel({
   if (!group) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-        <Filter2 className="h-12 w-12 mb-4 opacity-50" />
+        <Filter className="h-12 w-12 mb-4 opacity-50" />
         <p>请选择一个分组查看规则</p>
       </div>
     );
@@ -97,7 +96,7 @@ export function GroupRulesPanel({
 
   const getRuleIcon = (ruleType: string) => {
     return ruleType === 'filter' ? (
-      <Filter2 className="h-4 w-4" />
+      <Filter className="h-4 w-4" />
     ) : (
       <ArrowRightCircle className="h-4 w-4" />
     );
@@ -136,7 +135,7 @@ export function GroupRulesPanel({
           </div>
         ) : rules.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-            <Filter2 className="h-12 w-12 mb-4 opacity-50" />
+            <Filter className="h-12 w-12 mb-4 opacity-50" />
             <p>暂无规则</p>
             <p className="text-sm mt-2">点击"添加规则"开始配置</p>
           </div>

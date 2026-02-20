@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '@/stores/authStore';
 import { authApi } from '@/api';
@@ -6,14 +6,22 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Shield, Lock, Eye, EyeOff, CheckCircle2, AlertCircle } from 'lucide-react';
+import { Shield, Lock, Eye, EyeOff, CheckCircle2, AlertCircle, ArrowLeft } from 'lucide-react';
 
 export default function ChangePasswordPage() {
   const navigate = useNavigate();
   const user = useAuthStore((state) => state.user);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const setRequiresPasswordChange = useAuthStore((state) => state.setRequiresPasswordChange);
   const isLoading = useAuthStore((state) => state.isLoading);
   const setLoading = useAuthStore((state) => state.setLoading);
+
+  // Redirect to login if not authenticated
+  useEffect(() => {
+    if (!isAuthenticated) {
+      navigate('/login', { replace: true });
+    }
+  }, [isAuthenticated, navigate]);
 
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -97,6 +105,10 @@ export default function ChangePasswordPage() {
     }
   };
 
+  const handleBack = () => {
+    navigate(-1);
+  };
+
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden bg-background">
       {/* Background decoration */}
@@ -131,7 +143,17 @@ export default function ChangePasswordPage() {
 
         {/* Change Password Form */}
         <div className="rounded-xl border bg-card p-6 shadow-sm">
-          <h2 className="mb-5 text-base font-semibold text-foreground">设置新密码</h2>
+          <div className="mb-5 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={handleBack}
+              className="rounded-md p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+              title="返回"
+            >
+              <ArrowLeft size={18} />
+            </button>
+            <h2 className="text-base font-semibold text-foreground">设置新密码</h2>
+          </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             {/* Current Password */}
             <div className="space-y-1.5">

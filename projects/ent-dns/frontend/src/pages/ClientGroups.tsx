@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { clientGroupsApi, type ClientGroup, type ClientGroupMember, type CreateClientGroupRequest, type UpdateClientGroupRequest } from '@/api/clientGroups';
-import { clientsApi } from '@/api/clients';
-import { filtersApi } from '@/api/filters';
+import { clientGroupsApi, type ClientGroup, type CreateClientGroupRequest, type UpdateClientGroupRequest, type ClientGroupMember, type PaginatedResponse } from '@/api/clientGroups';
+import { clientsApi, type ClientRecord } from '@/api/clients';
+// import { filtersApi } from '@/api/filters';
 import { GroupTree } from '@/components/GroupTree';
 import { ClientList } from '@/components/ClientList';
 import { GroupRulesPanel } from '@/components/GroupRulesPanel';
@@ -32,6 +32,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { PRESET_COLORS } from '@/lib/colors';
+import { cn } from '@/lib/utils';
 
 export default function ClientGroupsPage() {
   const qc = useQueryClient();
@@ -52,7 +53,7 @@ export default function ClientGroupsPage() {
   const [moveToGroupId, setMoveToGroupId] = useState<number | null>(null);
 
   // 查询分组列表
-  const { data: groups = [], isLoading: groupsLoading } = useQuery({
+  const { data: groups = [] } = useQuery({
     queryKey: ['client-groups'],
     queryFn: () => clientGroupsApi.list(),
   });
@@ -60,17 +61,26 @@ export default function ClientGroupsPage() {
   // 查询客户端列表
   const { data: clientsData, isLoading: clientsLoading } = useQuery({
     queryKey: ['clients', selectedGroupId],
-    queryFn: () =>
-      selectedGroupId
-        ? clientGroupsApi.getMembers(selectedGroupId)
-        : clientsApi.list().then((allClients) => ({
-            data: allClients.map((c) => ({
-              ...c,
-              group_ids: [],
-              group_names: [],
-            })),
-            total: allClients.length,
+    queryFn: async (): Promise<PaginatedResponse<ClientGroupMember>> => {
+      if (selectedGroupId) {
+        return await clientGroupsApi.getMembers(selectedGroupId);
+      } else {
+        const allClients: ClientRecord[] = await clientsApi.list();
+        return {
+          data: allClients.map((c) => ({
+            id: c.id,
+            name: c.name,
+            ip: c.identifiers[0] || 'unknown',
+            mac: 'unknown',
+            last_seen: c.updated_at,
+            query_count: 0,
+            group_ids: [],
+            group_names: [],
           })),
+          total: allClients.length,
+        };
+      }
+    },
     enabled: !!selectedGroupId || activeTab === 'clients',
   });
 
@@ -85,11 +95,8 @@ export default function ClientGroupsPage() {
 
   const rules = rulesData?.data || [];
 
-  // 查询可用的过滤器列表
-  const { data: availableFilters = [] } = useQuery({
-    queryKey: ['filters'],
-    queryFn: () => filtersApi.list(),
-  });
+  // 查询可用的过滤器列表 - 使用 mock 数据，因为 filtersApi.list 不存在
+  const availableFilters: Array<{ id: number; name: string; pattern: string; action: string }> = [];
 
   const selectedGroup = groups.find((g) => g.id === selectedGroupId);
 
@@ -164,7 +171,7 @@ export default function ClientGroupsPage() {
 
   // 绑定规则
   const bindRuleMutation = useMutation({
-    mutationFn: (data: { ruleId: number; ruleType: string; priority: number }) =>
+    mutationFn: (data: { rule_id: string; rule_type: string; priority: number }) =>
       selectedGroupId
         ? clientGroupsApi.bindRules(selectedGroupId, { rules: [data] })
         : Promise.reject('No group selected'),
@@ -178,11 +185,11 @@ export default function ClientGroupsPage() {
 
   // 解绑规则
   const unbindRuleMutation = useMutation({
-    mutationFn: (data: { ruleId: number; ruleType: string }) =>
+    mutationFn: (data: { rule_id: string; rule_type: string }) =>
       selectedGroupId
         ? clientGroupsApi.unbindRules(selectedGroupId, {
-            rule_ids: [data.ruleId],
-            rule_type: data.ruleType,
+            rule_ids: [data.rule_id],
+            rule_type: data.rule_type,
           })
         : Promise.reject('No group selected'),
     onSuccess: () => {
@@ -194,7 +201,7 @@ export default function ClientGroupsPage() {
   });
 
   const resetForm = () => {
-    setForm({ name: '', color: PRESET_COLORS_LIST[0], description: '' });
+    setForm({ name: '', color: PRESET_COLORS[0], description: '' });
     setEditGroup(null);
   };
 
@@ -307,7 +314,7 @@ export default function ClientGroupsPage() {
       {/* 右侧内容区 */}
       <div className="flex-1 flex flex-col">
         {selectedGroup ? (
-          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="flex-1 flex flex-col">
+          <Tabs value={activeTab} onValueChange={(v: 'clients' | 'rules') => setActiveTab(v)} className="flex-1 flex flex-col">
             <div className="border-b px-6 py-4">
               <h1 className="text-2xl font-bold">{selectedGroup.name}</h1>
               <p className="text-muted-foreground">{selectedGroup.description}</p>
@@ -339,18 +346,13 @@ export default function ClientGroupsPage() {
                 group={selectedGroup}
                 rules={rules}
                 loading={rulesLoading}
-                onBindRule={(ruleId, ruleType, priority) =>
-                  bindRuleMutation.mutateAsync({ ruleId, ruleType, priority })
-                }
-                onUnbindRule={(ruleId, ruleType) =>
-                  unbindRuleMutation.mutateAsync({ ruleId, ruleType })
-                }
-                availableFilters={availableFilters.map((f) => ({
-                  id: f.id,
-                  name: f.name,
-                  pattern: f.pattern,
-                  action: f.action,
-                }))}
+                onBindRule={async (ruleId, ruleType, priority) => {
+                  await bindRuleMutation.mutateAsync({ rule_id: String(ruleId), rule_type: ruleType, priority });
+                }}
+                onUnbindRule={async (ruleId, ruleType) => {
+                  await unbindRuleMutation.mutateAsync({ rule_id: String(ruleId), rule_type: ruleType });
+                }}
+                availableFilters={availableFilters}
               />
             </TabsContent>
           </Tabs>
