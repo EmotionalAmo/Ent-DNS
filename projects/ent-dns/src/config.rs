@@ -39,6 +39,8 @@ pub struct ApiConfig {
 pub struct DatabaseConfig {
     #[serde(default = "default_db_path")]
     pub path: String,
+    #[serde(default = "default_query_log_retention_days")]
+    pub query_log_retention_days: u32,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -60,6 +62,7 @@ fn default_cors_allowed_origins() -> Vec<String> {
         "http://localhost:8080".to_string(),
     ]
 }
+fn default_query_log_retention_days() -> u32 { 7 }
 
 const DEFAULT_JWT_SECRET: &str = "change-me-in-production";
 
@@ -107,6 +110,7 @@ pub fn load() -> Result<Config> {
         .set_default("api.bind", "0.0.0.0")?
         .set_default("api.port", 8080)?
         .set_default("database.path", "./ent-dns.db")?
+        .set_default("database.query_log_retention_days", 7)?
         .set_default("auth.jwt_secret", DEFAULT_JWT_SECRET)?
         .set_default("auth.jwt_expiry_hours", 24)?
         .build()?

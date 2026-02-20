@@ -21,9 +21,9 @@ pub struct QueryLogEntry {
 }
 
 /// How many entries to accumulate before forcing a flush.
-const BATCH_SIZE: usize = 100;
+const BATCH_SIZE: usize = 500;  // Increased from 100 to 500 for better throughput
 /// Maximum time between flushes even when batch is not full.
-const FLUSH_INTERVAL: Duration = Duration::from_secs(1);
+const FLUSH_INTERVAL: Duration = Duration::from_secs(2);  // Increased from 1s to 2s
 
 /// Spawn the background writer task.  Returns the sender end of the channel
 /// which DnsHandler uses to enqueue entries (non-blocking).

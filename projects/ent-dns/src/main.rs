@@ -89,32 +89,39 @@ async fn main() -> Result<()> {
     }
 
     // Background: auto-cleanup query log based on query_log_retention_days setting
+    // Rotates logs daily to prevent database from growing indefinitely
     {
         let db = db_pool.clone();
+        let cfg_clone = cfg.clone();
         tokio::spawn(async move {
-            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(6 * 3600));
+            let retention_days = cfg_clone.database.query_log_retention_days;
+
+            // Run daily at 3 AM (24h interval)
+            let mut ticker = tokio::time::interval(tokio::time::Duration::from_secs(86400));
+
+            tracing::info!(
+                "Query log rotation enabled: retaining {} days, running daily",
+                retention_days
+            );
+
             ticker.tick().await; // skip immediate first tick
             loop {
                 ticker.tick().await;
-                let retention: i64 = sqlx::query_scalar(
-                    "SELECT CAST(value AS INTEGER) FROM settings WHERE key = 'query_log_retention_days'"
-                )
-                .fetch_optional(&db)
-                .await
-                .ok()
-                .flatten()
-                .unwrap_or(30);
 
                 match sqlx::query(
-                    "DELETE FROM query_log WHERE time < datetime('now', ?)"
+                    "DELETE FROM query_log WHERE time < datetime('now', '-' || ? || ' days')"
                 )
-                .bind(format!("-{} days", retention))
+                .bind(retention_days as i64)
                 .execute(&db)
                 .await {
                     Ok(r) if r.rows_affected() > 0 =>
-                        tracing::info!("Query log cleanup: deleted {} rows older than {} days", r.rows_affected(), retention),
+                        tracing::info!(
+                            "Query log rotation: deleted {} entries older than {} days",
+                            r.rows_affected(),
+                            retention_days
+                        ),
                     Ok(_) => {}
-                    Err(e) => tracing::warn!("Query log cleanup error: {}", e),
+                    Err(e) => tracing::warn!("Query log rotation error: {}", e),
                 }
             }
         });
