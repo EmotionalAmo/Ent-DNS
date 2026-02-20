@@ -43,7 +43,7 @@ pub struct AdvancedQueryParams {
 pub struct AggregateParams {
     #[serde(default)]
     pub filters: Vec<Filter>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_group_by")]
     pub group_by: Vec<String>,
     #[serde(default = "default_metric")]
     pub metric: String, // "count" | "sum_elapsed_ms" | "avg_elapsed_ms"
@@ -51,6 +51,43 @@ pub struct AggregateParams {
     pub time_bucket: Option<String>, // "1m", "5m", "15m", "1h", "1d"
     #[serde(default = "default_top_limit")]
     pub limit: i64,
+}
+
+fn deserialize_group_by<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::de::{self, Visitor};
+
+    struct GroupByVisitor;
+
+    impl<'de> Visitor<'de> for GroupByVisitor {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or a sequence of strings")
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: de::Error,
+        {
+            Ok(vec![value.to_string()])
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            let mut values = Vec::new();
+            while let Some(value) = seq.next_element::<String>()? {
+                values.push(value);
+            }
+            Ok(values)
+        }
+    }
+
+    deserializer.deserialize_any(GroupByVisitor)
 }
 
 #[derive(Debug, Deserialize)]
@@ -313,32 +350,74 @@ pub async fn aggregate(
     _auth: AuthUser,
     Query(params): Query<AggregateParams>,
 ) -> AppResult<Json<Value>> {
+    // 构建过滤条件
     let mut builder = QueryBuilder::new();
     for filter in &params.filters {
         builder.add_filter(filter)?;
     }
 
-    let (where_clause, bindings) = {
-        let bindings = builder.bindings.clone();
-        let (sql, _) = builder.build(&"AND", 1000, 0);
-        if let Some(pos) = sql.find("ORDER BY") {
-            (sql[..pos].to_string(), bindings)
-        } else {
-            (sql, bindings)
-        }
+    // 构建 WHERE 子句（不包含 ORDER BY/LIMIT/OFFSET）
+    let (where_clause, bindings) = if builder.conditions.is_empty() {
+        (String::new(), Vec::new())
+    } else {
+        let connector = " AND ";
+        let where_str = format!("WHERE {}", builder.conditions.join(connector));
+        (where_str, builder.bindings)
     };
+
+    // 如果没有 group_by，返回总体统计
+    if params.group_by.is_empty() {
+        let metric_sql = match params.metric.as_str() {
+            "sum_elapsed_ms" => "COALESCE(SUM(elapsed_ms), 0) as metric",
+            "avg_elapsed_ms" => "COALESCE(AVG(elapsed_ms), 0) as metric",
+            _ => "COUNT(*) as metric",
+        };
+
+        let agg_sql = format!(
+            "SELECT {} FROM query_log {}",
+            metric_sql, where_clause
+        );
+
+        let metric_value: i64 = {
+            let mut q = sqlx::query_scalar::<_, i64>(&agg_sql);
+            for binding in &bindings {
+                match binding {
+                    Value::String(s) => q = q.bind(s),
+                    Value::Number(n) => q = q.bind(n.as_i64().unwrap_or(0)),
+                    _ => {}
+                }
+            }
+            q.fetch_one(&state.db).await?
+        };
+
+        return Ok(Json(json!({
+            "data": [{
+                "metric": metric_value,
+            }],
+            "group_by": [],
+            "metric": params.metric,
+        })));
+    }
+
+    // 验证 group_by 字段是否有效
+    let valid_fields = ["client_ip", "client_name", "question", "qtype", "status", "upstream", "reason"];
+    for field in &params.group_by {
+        if !valid_fields.contains(&field.as_str()) {
+            return Err(AppError::Validation(format!("Invalid group_by field: {}. Valid fields: {:?}", field, valid_fields)));
+        }
+    }
 
     // GROUP BY query
     let group_fields = params.group_by.join(", ");
     let metric_sql = match params.metric.as_str() {
-        "sum_elapsed_ms" => "SUM(elapsed_ms) as metric",
-        "avg_elapsed_ms" => "AVG(elapsed_ms) as metric",
-        _ => "COUNT(*) as count",
+        "sum_elapsed_ms" => "COALESCE(SUM(elapsed_ms), 0) as metric",
+        "avg_elapsed_ms" => "COALESCE(AVG(elapsed_ms), 0) as metric",
+        _ => "COUNT(*) as metric",
     };
 
     let agg_sql = format!(
-        "SELECT {group_fields}, {metric_sql} FROM query_log {where_clause} GROUP BY {group_fields} ORDER BY metric DESC LIMIT ?",
-        where_clause = where_clause
+        "SELECT {}, {} FROM query_log {} GROUP BY {} ORDER BY metric DESC LIMIT ?",
+        group_fields, metric_sql, where_clause, group_fields
     );
 
     let rows: Vec<Value> = {
