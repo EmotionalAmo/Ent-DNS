@@ -8,6 +8,8 @@ use std::sync::Arc;
 use std::net::SocketAddr;
 use std::time::Instant;
 use dashmap::DashMap;
+use moka::future::Cache;
+use crate::api::validators::rule::RuleValidationResponse;
 use crate::config::Config;
 use crate::db::DbPool;
 use crate::dns::filter::FilterEngine;
@@ -17,6 +19,7 @@ use crate::metrics::DnsMetrics;
 pub mod router;
 pub mod middleware;
 pub mod handlers;
+pub mod validators;
 
 pub struct AppState {
     pub db: DbPool,
@@ -31,6 +34,8 @@ pub struct AppState {
     pub login_attempts: DashMap<String, (u32, Instant)>,
     /// Shared DNS handler — used by the DoH endpoint (Task 5)
     pub dns_handler: Arc<DnsHandler>,
+    /// Rule validation cache: (type + rule) → validation result
+    pub rule_validation_cache: Arc<Cache<String, RuleValidationResponse>>,
 }
 
 pub async fn serve(
@@ -42,6 +47,15 @@ pub async fn serve(
     dns_handler: Arc<DnsHandler>,
 ) -> Result<()> {
     let bind_addr = format!("{}:{}", cfg.api.bind, cfg.api.port);
+
+    // Rule validation cache: 1000 entries, 5 minutes TTL
+    let rule_validation_cache = Arc::new(
+        Cache::builder()
+            .max_capacity(1000)
+            .time_to_live(std::time::Duration::from_secs(300))
+            .build()
+    );
+
     let state = Arc::new(AppState {
         db,
         filter,
@@ -52,6 +66,7 @@ pub async fn serve(
         ws_tickets: DashMap::new(),
         login_attempts: DashMap::new(),
         dns_handler,
+        rule_validation_cache,
     });
     let cors = build_cors_layer(&cfg.api.cors_allowed_origins);
     let app = build_app(state, cors);

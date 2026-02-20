@@ -14,3 +14,4 @@ pub mod rewrites;
 pub mod upstreams;
 pub mod ws;
 pub mod doh;
+pub mod rule_validation;

@@ -101,7 +101,7 @@ pub fn load() -> Result<Config> {
         .add_source(config::Environment::with_prefix("ENT_DNS").separator("__"))
         .set_default("dns.bind", "0.0.0.0")?
         .set_default("dns.port", 5353)?
-        .set_default("dns.upstreams", vec!["https://1.1.1.1/dns-query", "https://8.8.8.8/dns-query"])?
+        .set_default("dns.upstreams", vec!["1.1.1.1:53", "8.8.8.8:53"])?
         .set_default("dns.doh_enabled", false)?
         .set_default("dns.dot_enabled", false)?
         .set_default("api.bind", "0.0.0.0")?

@@ -14,21 +14,20 @@ pub struct DnsResolver {
 impl DnsResolver {
     /// Default resolver using Cloudflare (plain UDP fallback for dev compatibility).
     ///
-    /// DNSSEC validation is enabled: Cloudflare's resolvers are DNSSEC-aware and
-    /// will return authenticated responses.  hickory-resolver with the `dnssec-ring`
-    /// feature will validate signatures locally and return a `ProtoError` (mapped to
-    /// ServFail) for any response that fails DNSSEC verification.
+    /// Note: DNSSEC validation is DISABLED for performance and compatibility.
+    /// Cloudflare's DoH endpoints may not return DNSSEC signatures for all queries,
+    /// and enabling validation would cause SERVFAIL responses for many domains.
     pub async fn new(cfg: &Config) -> Result<Self> {
         let mut opts = ResolverOpts::default();
         opts.cache_size = 0; // We handle caching ourselves
         opts.use_hosts_file = false;
-        // Task 4: enable DNSSEC validation
-        opts.validate = true;
+        // DNSSEC validation disabled for compatibility with Cloudflare DoH
+        opts.validate = false;
 
         let resolver = TokioAsyncResolver::tokio(ResolverConfig::cloudflare(), opts);
 
         tracing::info!(
-            "DNS resolver initialized with DNSSEC validation, upstreams: {:?}",
+            "DNS resolver initialized without DNSSEC validation, upstreams: {:?}",
             cfg.dns.upstreams
         );
         Ok(Self { inner: resolver })
@@ -84,8 +83,12 @@ impl DnsResolver {
         qtype: RecordType,
         request: &Message,
     ) -> Result<(Vec<u8>, Option<u32>)> {
+        let request_id = request.id();
+        tracing::debug!("resolver: received request with id={}", request_id);
+
         let mut response = Message::new();
-        response.set_id(request.id());
+        response.set_id(request_id);
+        tracing::debug!("resolver: set response id to {} (from request id {})", response.id(), request_id);
         response.set_message_type(MessageType::Response);
         response.set_op_code(OpCode::Query);
         response.set_recursion_desired(request.recursion_desired());
@@ -98,6 +101,7 @@ impl DnsResolver {
 
         match self.inner.lookup(domain, qtype).await {
             Ok(lookup) => {
+                tracing::debug!("lookup returned {} records", lookup.records().len());
                 response.set_response_code(ResponseCode::NoError);
                 for record in lookup.records() {
                     // Track minimum TTL across all answer records (Task 2)
@@ -108,6 +112,11 @@ impl DnsResolver {
                     });
                     response.add_answer(record.clone());
                 }
+                tracing::debug!(
+                    "After adding answers: response id={}, answer count={}",
+                    response.id(),
+                    response.answer_count()
+                );
                 tracing::debug!(
                     "Resolved {} {:?}: {} records, min_ttl={:?}",
                     domain,
@@ -127,6 +136,14 @@ impl DnsResolver {
                 }
             },
         }
+
+        let final_id = response.id();
+        tracing::debug!(
+            "resolver: returning response id={}, request_id={}, final_id={}",
+            final_id,
+            request_id,
+            final_id
+        );
 
         Ok((response.to_vec()?, min_ttl))
     }

@@ -31,7 +31,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
-import { Input } from '@/components/ui/input';
+import { ValidatedInput } from '@/components/ValidatedInput';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import {
   Plus,
@@ -229,49 +229,34 @@ function CreateRewriteDialog({
             )}
 
             {/* 域名输入 */}
-            <div className="space-y-2">
-              <Label htmlFor="domain">域名 *</Label>
-              <div className="relative">
-                <Input
-                  id="domain"
-                  value={formData.domain}
-                  onChange={(e) => setFormData({ ...formData, domain: e.target.value })}
-                  placeholder="例如: myapp.local"
-                  className="pr-9 font-mono"
-                />
-                <button
-                  type="button"
-                  onClick={handleCopyToClipboard}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                  title="复制"
-                >
-                  {copied ? <CheckCircle2 size={16} className="text-green-500" /> : <Copy size={16} />}
-                </button>
-              </div>
-              <p className="text-xs text-muted-foreground">
-                DNS 查询此域名时将返回指定的 IP 地址
-              </p>
-            </div>
+            <ValidatedInput
+              id="domain"
+              label="域名 *"
+              type="domain"
+              value={formData.domain}
+              onChange={(value) => setFormData({ ...formData, domain: value })}
+              placeholder="例如: myapp.local"
+            />
+            <p className="text-xs text-muted-foreground">
+              DNS 查询此域名时将返回指定的 IP 地址
+            </p>
 
             {/* 目标 IP 输入 */}
-            <div className="space-y-2">
-              <Label htmlFor="target">目标 IP 地址 *</Label>
-              <IpSelector
-                value={formData.answer}
-                onChange={(ip) => setFormData({ ...formData, answer: ip })}
-              />
-              <Input
-                id="target"
-                type="text"
-                value={formData.answer}
-                onChange={(e) => setFormData({ ...formData, answer: e.target.value })}
-                placeholder="例如: 127.0.0.1"
-                className="font-mono"
-              />
-              <p className="text-xs text-muted-foreground">
-                支持 IPv4 和 IPv6 地址
-              </p>
-            </div>
+            <IpSelector
+              value={formData.answer}
+              onChange={(ip) => setFormData({ ...formData, answer: ip })}
+            />
+            <ValidatedInput
+              id="target"
+              label="目标 IP 地址 *"
+              type="ip"
+              value={formData.answer}
+              onChange={(value) => setFormData({ ...formData, answer: value })}
+              placeholder="例如: 127.0.0.1"
+            />
+            <p className="text-xs text-muted-foreground">
+              支持 IPv4 和 IPv6 地址
+            </p>
 
             {/* 启用状态 */}
             {/* 重写规则创建后立即生效 */}

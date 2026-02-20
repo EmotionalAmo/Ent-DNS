@@ -33,7 +33,7 @@ import {
 } from '@/components/ui/alert-dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
+import { RuleInput } from '@/components/RuleInput';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -141,12 +141,12 @@ function CreateRuleDialog({
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label htmlFor="rule">规则内容</Label>
-              <Textarea
+              <RuleInput
                 id="rule"
                 value={formData.rule}
-                onChange={(e) => setFormData({ ...formData, rule: e.target.value })}
+                onChange={(value) => setFormData({ ...formData, rule: value })}
+                ruleType="filter"
                 placeholder="例如: ||ads.example.com^"
-                className="font-mono text-sm"
                 rows={3}
               />
               <p className="text-xs text-muted-foreground">

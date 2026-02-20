@@ -59,6 +59,14 @@ impl DnsHandler {
     pub async fn handle(&self, data: Vec<u8>, client_ip: String) -> Result<Vec<u8>> {
         let request = Message::from_vec(&data)?;
 
+        tracing::debug!(
+            "REQ: id={} type={:?} opcode={:?} queries={}",
+            request.id(),
+            request.message_type(),
+            request.op_code(),
+            request.queries().len()
+        );
+
         if request.message_type() != MessageType::Query || request.op_code() != OpCode::Query {
             return self.servfail(&request);
         }
@@ -88,7 +96,7 @@ impl DnsHandler {
             let elapsed = start.elapsed().as_millis() as i64;
 
             if matches!(qtype, RecordType::A | RecordType::AAAA) {
-                if let Ok(response) = self.rewrite_response(&request, &answer, qtype) {
+                if let Ok(response) = self.rewrite_response(&request, &answer, qtype, &domain) {
                     self.metrics.inc_allowed();
                     self.log_query(client_ip, &domain, &qtype_str, "allowed", Some("rewrite"), elapsed);
                     return Ok(response);
@@ -108,9 +116,16 @@ impl DnsHandler {
         // Check cache
         if let Some(cached) = self.cache.get(&domain, qtype).await {
             let elapsed = start.elapsed().as_millis() as i64;
+
+            // CRITICAL: Update cached response ID to match current request ID
+            // Cached responses contain the original request ID, which must be replaced
+            let mut cached_msg = Message::from_vec(&cached)?;
+            cached_msg.set_id(request.id());
+            let updated_cached = cached_msg.to_vec()?;
+
             self.metrics.inc_cached();
             self.log_query(client_ip, &domain, &qtype_str, "cached", None, elapsed);
-            return Ok(cached);
+            return Ok(updated_cached);
         }
 
         // Resolve: use client-specific upstream if configured, else global resolver
@@ -120,6 +135,24 @@ impl DnsHandler {
         } else {
             self.resolver.resolve(&domain, qtype, &request).await?
         };
+
+        // Verify response ID matches request ID (CRITICAL for DNS protocol)
+        let response_msg = Message::from_vec(&response)?;
+        tracing::debug!(
+            "DNS: domain={} req_id={} resp_id={} status={}",
+            domain,
+            request.id(),
+            response_msg.id(),
+            if response_msg.id() == request.id() { "MATCH" } else { "MISMATCH" }
+        );
+        if response_msg.id() != request.id() {
+            tracing::error!(
+                "CRITICAL: DNS ID mismatch! domain={} req_id={} resp_id={}",
+                domain,
+                request.id(),
+                response_msg.id()
+            );
+        }
 
         let elapsed = start.elapsed().as_millis() as i64;
         // Cache with upstream-derived TTL (Task 2: respect upstream TTL)
@@ -211,7 +244,7 @@ impl DnsHandler {
     }
 
     /// Build a response for DNS rewrite
-    fn rewrite_response(&self, request: &Message, answer: &str, qtype: RecordType) -> Result<Vec<u8>> {
+    fn rewrite_response(&self, request: &Message, answer: &str, qtype: RecordType, domain: &str) -> Result<Vec<u8>> {
         let ip: IpAddr = answer.parse()
             .map_err(|_| anyhow::anyhow!("Invalid IP address: {}", answer))?;
 
@@ -238,6 +271,8 @@ impl DnsHandler {
         response.set_recursion_available(true);
         response.add_query(query.clone());
         response.add_answer(record);
+
+        tracing::debug!("REWRITE: req_id={} resp_id={} domain={} -> {}", request.id(), response.id(), domain, answer);
 
         Ok(response.to_vec()?)
     }

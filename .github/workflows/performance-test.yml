@@ -1,0 +1,237 @@
+name: Performance Test
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/**/*.rs'
+      - 'Cargo.toml'
+      - '.github/workflows/performance-test.yml'
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 2 * * *'  # 每天凌晨 2 点运行完整测试
+  workflow_dispatch:  # 允许手动触发
+
+env:
+  CARGO_TERM_COLOR: always
+  ENT_DNS__DATABASE__PATH: /tmp/ent-dns-test.db
+  ENT_DNS__AUTH__JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+jobs:
+  quick-test:
+    name: Quick Performance Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/registry
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache Cargo index
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/git
+          key: ${{ runner.os }}-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Cache Cargo build
+        uses: actions/cache@v4
+        with:
+          path: target
+          key: ${{ runner.os }}-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dnsperf sqlite3
+
+      - name: Download k6
+        run: |
+          curl https://github.com/grafana/k6/releases/download/v0.51.0/k6-v0.51.0-linux-amd64.tar.gz -L | tar xvz
+          sudo mv k6-v0.51.0-linux-amd64/k6 /usr/local/bin/
+
+      - name: Build Ent-DNS (release)
+        run: cargo build --release --verbose
+
+      - name: Set JWT Secret
+        if: env.ENT_DNS__AUTH__JWT_SECRET == ''
+        run: |
+          echo "ENT_DNS__AUTH__JWT_SECRET=test-secret-for-ci-only-32-characters-minimum-length" >> $GITHUB_ENV
+
+      - name: Start Ent-DNS
+        run: |
+          ./target/release/ent-dns &
+          echo $! > dns.pid
+          sleep 10
+
+      - name: Health check
+        run: |
+          curl --retry 5 --retry-delay 2 --retry-all-errors http://127.0.0.1:8080/health
+
+      - name: Generate test domains
+        run: |
+          mkdir -p tests/loadtest
+          for i in {1..100}; do
+            echo "test$i.example.com"
+          done > tests/loadtest/domains.txt
+
+      - name: DNS Load Test (100 QPS)
+        run: |
+          dnsperf -s 127.0.0.1 -p 5353 -d tests/loadtest/domains.txt \
+            -l 30 -q 100 -s 1000 > dnsperf-100qps.log 2>&1 || true
+
+      - name: DNS Load Test (1000 QPS)
+        run: |
+          dnsperf -s 127.0.0.1 -p 5353 -d tests/loadtest/domains.txt \
+            -l 30 -q 1000 -s 1000 > dnsperf-1000qps.log 2>&1 || true
+
+      - name: Get JWT Token
+        id: token
+        run: |
+          TOKEN=$(curl -s -X POST http://127.0.0.1:8080/api/v1/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"admin","password":"admin"}' | jq -r '.token')
+          echo "token=$TOKEN" >> $GITHUB_OUTPUT
+
+      - name: API Load Test (10 VUs)
+        run: |
+          export AUTH_TOKEN=${{ steps.token.outputs.token }}
+          k6 run tests/loadtest/api-write-test.js \
+            --duration 60s \
+            --vus 10 \
+            --summary-export=k6-summary.json || true
+
+      - name: Parse Results
+        run: |
+          echo "=== DNS Performance Results ==="
+          echo "100 QPS:"
+          grep "Queries per second:" dnsperf-100qps.log || echo "No data"
+          echo "1000 QPS:"
+          grep "Queries per second:" dnsperf-1000qps.log || echo "No data"
+
+          echo ""
+          echo "=== API Performance Results ==="
+          cat k6-summary.json | jq '.metrics.http_req_duration.values'
+
+      - name: Check performance regression
+        run: |
+          # 简单的性能回归检查（P95 延迟不应超过 500ms）
+          P95=$(cat k6-summary.json | jq '.metrics.http_req_duration.values."p(95)"' || echo "0")
+          if (( $(echo "$P95 > 500" | bc -l) )); then
+            echo "ERROR: API P95 latency too high: $P95 ms"
+            exit 1
+          fi
+          echo "API P95 latency OK: $P95 ms"
+
+      - name: Upload Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: performance-results-${{ github.sha }}
+          path: |
+            dnsperf-*.log
+            k6-*.json
+
+      - name: Stop Ent-DNS
+        if: always()
+        run: kill $(cat dns.pid) || true
+
+  full-test:
+    name: Full Stability Test
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dnsperf sqlite3
+
+      - name: Download k6
+        run: |
+          curl https://github.com/grafana/k6/releases/download/v0.51.0/k6-v0.51.0-linux-amd64.tar.gz -L | tar xvz
+          sudo mv k6-v0.51.0-linux-amd64/k6 /usr/local/bin/
+
+      - name: Build Ent-DNS (release)
+        run: cargo build --release
+
+      - name: Set JWT Secret
+        run: |
+          echo "ENT_DNS__AUTH__JWT_SECRET=test-secret-for-ci-only-32-characters-minimum-length" >> $GITHUB_ENV
+
+      - name: Start Ent-DNS
+        run: |
+          ./target/release/ent-dns &
+          echo $! > dns.pid
+          sleep 10
+
+      - name: Generate test domains
+        run: |
+          mkdir -p tests/loadtest
+          for i in {1..1000}; do
+            echo "test$i.example.com"
+          done > tests/loadtest/domains.txt
+
+      - name: Extended DNS Load Test (5 minutes, 1000 QPS)
+        run: |
+          dnsperf -s 127.0.0.1 -p 5353 -d tests/loadtest/domains.txt \
+            -l 300 -q 1000 -s 1000 > dnsperf-extended.log 2>&1 || true
+
+      - name: Extended API Load Test (10 minutes, 50 VUs)
+        run: |
+          TOKEN=$(curl -s -X POST http://127.0.0.1:8080/api/v1/auth/login \
+            -H "Content-Type: application/json" \
+            -d '{"username":"admin","password":"admin"}' | jq -r '.token')
+          export AUTH_TOKEN=$TOKEN
+          k6 run tests/loadtest/api-write-test.js \
+            --duration 600s \
+            --vus 50 \
+            --out json=k6-extended.json || true
+
+      - name: Collect metrics
+        run: |
+          echo "=== Process Info ==="
+          ps aux | grep ent-dns | grep -v grep
+
+          echo ""
+          echo "=== SQLite Status ==="
+          sqlite3 /tmp/ent-dns-test.db <<EOF
+SELECT "Query Count:" || COUNT(*) FROM query_log;
+SELECT "Disk Size:" || (SELECT page_count * page_size FROM pragma_page_count, pragma_page_size) || " bytes";
+PRAGMA lock_status;
+EOF
+
+          echo ""
+          echo "=== Prometheus Metrics ==="
+          curl -s http://127.0.0.1:8080/metrics
+
+      - name: Upload Full Results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-performance-results-${{ github.sha }}
+          path: |
+            dnsperf-*.log
+            k6-*.json
+
+      - name: Stop Ent-DNS
+        if: always()
+        run: kill $(cat dns.pid) || true

@@ -56,9 +56,12 @@ pub async fn run(handler: Arc<DnsHandler>, bind_addr: String) -> Result<()> {
                 let handler = handler.clone();
                 let socket = udp_socket.clone();
                 let client_ip = peer.ip().to_string();
+
+                // Spawn task for DNS processing
                 tokio::spawn(async move {
                     match handler.handle(data, client_ip).await {
                         Ok(response) => {
+                            // Send response directly to avoid channel-induced ID corruption
                             if let Err(e) = socket.send_to(&response, peer).await {
                                 tracing::warn!("Failed to send DNS response: {}", e);
                             }
