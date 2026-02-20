@@ -2,15 +2,20 @@ use anyhow::Result;
 use chrono::Utc;
 use hickory_proto::op::{Message, MessageType, OpCode, ResponseCode};
 use hickory_proto::rr::{RData, Record, RecordType, rdata::{A, AAAA}};
+use moka::future::Cache as MokaCache;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::time::Instant;
-use tokio::sync::{broadcast, RwLock};
+use std::time::{Duration, Instant};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use crate::config::Config;
 use crate::db::DbPool;
+use crate::db::query_log_writer::QueryLogEntry;
 use crate::metrics::DnsMetrics;
 use super::{filter::FilterEngine, resolver::DnsResolver, cache::DnsCache};
+
+/// TTL for the client-config cache.  Client configs change rarely; 60 s is safe. (M-4 fix)
+const CLIENT_CACHE_TTL: Duration = Duration::from_secs(60);
 
 pub struct DnsHandler {
     filter: Arc<FilterEngine>,
@@ -18,27 +23,40 @@ pub struct DnsHandler {
     /// Per-client resolvers keyed by sorted upstream list (e.g. "1.1.1.1,8.8.8.8")
     client_resolvers: RwLock<HashMap<String, Arc<DnsResolver>>>,
     cache: Arc<DnsCache>,
+    /// TTL cache for client config: IP → (filter_enabled, upstreams) (M-4 fix)
+    client_config_cache: MokaCache<String, (bool, Option<Vec<String>>)>,
     db: DbPool,
     metrics: Arc<DnsMetrics>,
     query_log_tx: broadcast::Sender<serde_json::Value>,
+    /// Non-blocking sender to the batch query log writer (Task 1: async batch write)
+    query_log_entry_tx: mpsc::UnboundedSender<QueryLogEntry>,
 }
 
 impl DnsHandler {
     pub async fn new(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>, query_log_tx: broadcast::Sender<serde_json::Value>) -> Result<Self> {
         let resolver = Arc::new(DnsResolver::new(&cfg).await?);
         let cache = Arc::new(DnsCache::new());
+        let client_config_cache = MokaCache::builder()
+            .max_capacity(4096)
+            .time_to_live(CLIENT_CACHE_TTL)
+            .build();
+        // Spawn batch writer; the sender is stored so log_query() is fully non-blocking
+        let query_log_entry_tx = crate::db::query_log_writer::spawn(db.clone());
         Ok(Self {
             filter,
             resolver,
             client_resolvers: RwLock::new(HashMap::new()),
             cache,
+            client_config_cache,
             db,
             metrics,
             query_log_tx,
+            query_log_entry_tx,
         })
     }
 
-    pub async fn handle_udp(&self, data: Vec<u8>, client_ip: String) -> Result<Vec<u8>> {
+    /// Handle a DNS query (wire format bytes).  Used by both UDP and TCP transports.
+    pub async fn handle(&self, data: Vec<u8>, client_ip: String) -> Result<Vec<u8>> {
         let request = Message::from_vec(&data)?;
 
         if request.message_type() != MessageType::Query || request.op_code() != OpCode::Query {
@@ -96,7 +114,7 @@ impl DnsHandler {
         }
 
         // Resolve: use client-specific upstream if configured, else global resolver
-        let response = if let Some(ref upstreams) = client_upstream_urls {
+        let (response, min_ttl) = if let Some(ref upstreams) = client_upstream_urls {
             let resolver = self.get_or_create_client_resolver(upstreams).await?;
             resolver.resolve(&domain, qtype, &request).await?
         } else {
@@ -104,7 +122,8 @@ impl DnsHandler {
         };
 
         let elapsed = start.elapsed().as_millis() as i64;
-        self.cache.set(&domain, qtype, response.clone()).await;
+        // Cache with upstream-derived TTL (Task 2: respect upstream TTL)
+        self.cache.set_with_ttl(&domain, qtype, response.clone(), min_ttl).await;
         self.metrics.inc_allowed();
         self.log_query(client_ip, &domain, &qtype_str, "allowed", None, elapsed);
 
@@ -113,8 +132,20 @@ impl DnsHandler {
 
     /// Look up client configuration by source IP.
     /// Returns (filter_enabled, Option<Vec<upstream_urls>>).
-    /// Matches client identifiers that are plain IP addresses.
+    /// Results are cached for CLIENT_CACHE_TTL to avoid per-query full-table scans (M-4 fix).
     async fn get_client_config(&self, client_ip: &str) -> (bool, Option<Vec<String>>) {
+        // Fast path: cache hit
+        if let Some(cached) = self.client_config_cache.get(client_ip).await {
+            return cached;
+        }
+
+        // Slow path: full table scan (rare — only on cache miss)
+        let result = self.resolve_client_config(client_ip).await;
+        self.client_config_cache.insert(client_ip.to_string(), result.clone()).await;
+        result
+    }
+
+    async fn resolve_client_config(&self, client_ip: &str) -> (bool, Option<Vec<String>>) {
         let full_rows: Vec<(String, i64, Option<String>)> = match sqlx::query_as(
             "SELECT identifiers, filter_enabled, upstreams FROM clients"
         )
@@ -190,7 +221,8 @@ impl DnsHandler {
             _ => anyhow::bail!("IP type doesn't match query type"),
         };
 
-        let query = request.queries().first().unwrap();
+        let query = request.queries().first()
+            .ok_or_else(|| anyhow::anyhow!("DNS rewrite request contains no queries"))?;
 
         let mut record = Record::new();
         record.set_name(query.name().clone());
@@ -210,42 +242,42 @@ impl DnsHandler {
         Ok(response.to_vec()?)
     }
 
-    /// Fire-and-forget async query log write + WebSocket broadcast.
+    /// Non-blocking query log write + WebSocket broadcast.
+    ///
+    /// The DB write goes through the batch writer (Task 1): send() is O(1) and
+    /// never blocks the DNS hot path.  The WebSocket broadcast is also fire-and-forget.
     fn log_query(&self, client_ip: String, domain: &str, qtype: &str, status: &str, reason: Option<&str>, elapsed_ms: i64) {
-        let db = self.db.clone();
         let domain = domain.to_string();
         let qtype = qtype.to_string();
         let status = status.to_string();
         let reason = reason.map(|s| s.to_string());
         let now = Utc::now().to_rfc3339();
-        let tx = self.query_log_tx.clone();
 
-        tokio::spawn(async move {
-            let _ = sqlx::query(
-                "INSERT INTO query_log (time, client_ip, question, qtype, status, reason, elapsed_ms)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)"
-            )
-            .bind(&now)
-            .bind(&client_ip)
-            .bind(&domain)
-            .bind(&qtype)
-            .bind(&status)
-            .bind(&reason)
-            .bind(elapsed_ms)
-            .execute(&db)
-            .await;
+        // Enqueue for batch write — non-blocking (unbounded channel)
+        let entry = QueryLogEntry {
+            time: now.clone(),
+            client_ip: client_ip.clone(),
+            question: domain.clone(),
+            qtype: qtype.clone(),
+            status: status.clone(),
+            reason: reason.clone(),
+            elapsed_ms,
+        };
+        if let Err(e) = self.query_log_entry_tx.send(entry) {
+            tracing::warn!("QueryLogWriter channel closed, dropping entry: {}", e);
+        }
 
-            let event = serde_json::json!({
-                "time": now,
-                "client_ip": client_ip,
-                "question": domain,
-                "qtype": qtype,
-                "status": status,
-                "reason": reason,
-                "elapsed_ms": elapsed_ms,
-            });
-            let _ = tx.send(event);
+        // WebSocket real-time broadcast (non-blocking; receivers may not exist)
+        let event = serde_json::json!({
+            "time": now,
+            "client_ip": client_ip,
+            "question": domain,
+            "qtype": qtype,
+            "status": status,
+            "reason": reason,
+            "elapsed_ms": elapsed_ms,
         });
+        let _ = self.query_log_tx.send(event);
     }
 
     fn nxdomain(&self, request: &Message) -> Result<Vec<u8>> {

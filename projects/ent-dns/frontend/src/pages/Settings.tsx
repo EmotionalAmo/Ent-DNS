@@ -66,21 +66,21 @@ function UpstreamDialog({
 
     const data = upstream
       ? ({
-          name,
-          addresses: addressesArray,
-          priority,
-          health_check_interval: interval,
-          health_check_timeout: timeout,
-          failover_threshold: threshold,
-        } as UpdateUpstreamRequest)
+        name,
+        addresses: addressesArray,
+        priority,
+        health_check_interval: interval,
+        health_check_timeout: timeout,
+        failover_threshold: threshold,
+      } as UpdateUpstreamRequest)
       : ({
-          name,
-          addresses: addressesArray,
-          priority,
-          health_check_interval: interval,
-          health_check_timeout: timeout,
-          failover_threshold: threshold,
-        } as CreateUpstreamRequest);
+        name,
+        addresses: addressesArray,
+        priority,
+        health_check_interval: interval,
+        health_check_timeout: timeout,
+        failover_threshold: threshold,
+      } as CreateUpstreamRequest);
 
     onSave(data);
   };
@@ -320,288 +320,291 @@ export default function SettingsPage() {
   const current = { ...settings, ...form } as DnsSettingsRecord & UpdateDnsSettingsPayload;
 
   return (
-    <div className="space-y-6 max-w-2xl">
+    <div className="space-y-6 w-full max-w-[1400px] mx-auto pb-10">
       {/* 页面标题 */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-lg font-semibold">设置</h2>
-          <p className="text-sm text-muted-foreground">配置 DNS 服务器行为和数据保留策略</p>
+          <h2 className="text-2xl font-bold tracking-tight">系统设置</h2>
+          <p className="text-sm text-muted-foreground mt-1">配置 DNS 服务器行为、数据保留及上游故障转移策略。</p>
         </div>
-        <Button onClick={handleSave} disabled={updateMutation.isPending}>
-          {updateMutation.isPending ? (
-            <><RefreshCw size={14} className="mr-1 animate-spin" />保存中...</>
-          ) : (
-            <><Save size={14} className="mr-1" />保存设置</>
-          )}
-        </Button>
-      </div>
-
-      {/* 缓存设置 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <SettingsIcon size={16} />
-            缓存设置
-          </CardTitle>
-          <CardDescription>DNS 查询结果缓存配置</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <SettingRow
-            label="缓存 TTL"
-            description="DNS 响应缓存时间（秒），0 表示禁用缓存"
-          >
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={0}
-                max={86400}
-                value={current.cache_ttl ?? 300}
-                onChange={(e) =>
-                  setForm({ ...form, cache_ttl: Number(e.target.value) })
-                }
-                className="w-28"
-              />
-              <span className="text-sm text-muted-foreground">秒</span>
-            </div>
-          </SettingRow>
-        </CardContent>
-      </Card>
-
-      {/* 数据保留 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>数据保留</CardTitle>
-          <CardDescription>查询日志和统计数据的保留周期</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <SettingRow
-            label="查询日志保留"
-            description="DNS 查询日志的保留天数"
-          >
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={1}
-                max={365}
-                value={current.query_log_retention_days ?? 30}
-                onChange={(e) =>
-                  setForm({ ...form, query_log_retention_days: Number(e.target.value) })
-                }
-                className="w-24"
-              />
-              <span className="text-sm text-muted-foreground">天</span>
-            </div>
-          </SettingRow>
-          <SettingRow
-            label="统计数据保留"
-            description="Dashboard 统计数据的保留天数"
-          >
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={1}
-                max={365}
-                value={current.stats_retention_days ?? 90}
-                onChange={(e) =>
-                  setForm({ ...form, stats_retention_days: Number(e.target.value) })
-                }
-                className="w-24"
-              />
-              <span className="text-sm text-muted-foreground">天</span>
-            </div>
-          </SettingRow>
-        </CardContent>
-      </Card>
-
-      {/* 安全过滤 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Shield size={16} />
-            安全过滤
-          </CardTitle>
-          <CardDescription>额外的内容过滤选项</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <SettingRow
-            label="安全搜索"
-            description="强制使用 Google/Bing/YouTube 的安全搜索模式"
-          >
-            <Switch
-              checked={current.safe_search_enabled ?? false}
-              onCheckedChange={(v) => setForm({ ...form, safe_search_enabled: v })}
-            />
-          </SettingRow>
-          <SettingRow
-            label="家长控制"
-            description="拦截成人内容相关域名"
-          >
-            <Switch
-              checked={current.parental_control_enabled ?? false}
-              onCheckedChange={(v) => setForm({ ...form, parental_control_enabled: v })}
-            />
-          </SettingRow>
-        </CardContent>
-      </Card>
-
-      {/* Upstream 管理 */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <Server size={16} />
-              DNS 上游服务器
-            </span>
-            <Button size="sm" onClick={handleCreateUpstream}>
-              <Plus size={14} className="mr-1" />添加
-            </Button>
-          </CardTitle>
-          <CardDescription>配置上游 DNS 服务器和故障转移策略</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {upstreamsLoading ? (
-            <div className="flex justify-center py-8">
-              <RefreshCw size={24} className="animate-spin text-muted-foreground" />
-            </div>
-          ) : upstreams && upstreams.length > 0 ? (
-            <div className="space-y-3">
-              {upstreams.map((upstream) => (
-                <div
-                  key={upstream.id}
-                  className="border rounded-lg p-4 space-y-3"
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span
-                          className={`w-2.5 h-2.5 rounded-full ${getStatusColor(upstream.health_status)}`}
-                          title={upstream.health_status}
-                        />
-                        <h4 className="font-medium">{upstream.name}</h4>
-                        <span className="text-xs bg-muted px-2 py-0.5 rounded">
-                          优先级 {upstream.priority}
-                        </span>
-                      </div>
-                      <div className="text-sm text-muted-foreground space-y-1">
-                        <div>
-                          地址: {upstream.addresses.join(', ')}
-                        </div>
-                        {testResults[upstream.id] && (
-                          <div className={`text-xs ${testResults[upstream.id]?.success ? 'text-green-600' : 'text-red-600'}`}>
-                            {testResults[upstream.id]?.success
-                              ? `测试通过 (${testResults[upstream.id]?.latency_ms}ms)`
-                              : `测试失败: ${testResults[upstream.id]?.error}`}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleEditUpstream(upstream)}
-                      >
-                        编辑
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => handleTestUpstream(upstream.id)}
-                        disabled={testingUpstream === upstream.id}
-                      >
-                        {testingUpstream === upstream.id ? (
-                          <RefreshCw size={14} className="animate-spin" />
-                        ) : (
-                          <Activity size={14} />
-                        )}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleDeleteUpstream(upstream.id, upstream.name)}
-                      >
-                        <Trash2 size={14} className="text-destructive" />
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    <span>检查间隔: {upstream.health_check_interval}s</span>
-                    <span>超时: {upstream.health_check_timeout}s</span>
-                    <span>阈值: {upstream.failover_threshold}</span>
-                    <span>启用: {upstream.is_active ? '是' : '否'}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-muted-foreground">
-              暂无上游服务器，点击"添加"创建
-            </div>
-          )}
-          <div className="mt-4 pt-4 border-t">
-            <Button
-              variant="outline"
-              onClick={() => failoverMutation.mutate()}
-              disabled={failoverMutation.isPending}
-              className="w-full"
-            >
-              <Zap size={16} className="mr-2" />
-              {failoverMutation.isPending ? '切换中...' : '手动故障转移'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* 故障转移日志 */}
-      <Card>
-        <CardHeader>
-          <CardTitle>故障转移日志</CardTitle>
-          <CardDescription>Upstream 切换历史记录</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {failoverLog && failoverLog.length > 0 ? (
-            <div className="space-y-2 max-h-60 overflow-y-auto">
-              {failoverLog.map((entry) => (
-                <div
-                  key={entry.id}
-                  className="text-sm py-2 border-b last:border-0"
-                >
-                  <div className="flex items-center gap-2">
-                    <span className="text-muted-foreground">
-                      {new Date(entry.timestamp).toLocaleString('zh-CN')}
-                    </span>
-                    <span className={`px-2 py-0.5 rounded text-xs ${
-                      entry.action === 'failover_triggered' ? 'bg-yellow-100 text-yellow-800' :
-                      entry.action === 'recovered' ? 'bg-green-100 text-green-800' :
-                      'bg-red-100 text-red-800'
-                    }`}>
-                      {entry.action}
-                    </span>
-                  </div>
-                  <div className="text-muted-foreground text-xs mt-1">
-                    Upstream: {entry.upstream_id}
-                    {entry.reason && ` - ${entry.reason}`}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-4 text-muted-foreground text-sm">
-              暂无故障转移记录
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* 保存按钮 (底部) */}
-      <div className="flex justify-end pb-4">
-        <Button onClick={handleSave} disabled={updateMutation.isPending} size="lg">
+        <Button onClick={handleSave} disabled={updateMutation.isPending} className="shrink-0" size="default">
           {updateMutation.isPending ? (
             <><RefreshCw size={16} className="mr-2 animate-spin" />保存中...</>
           ) : (
             <><Save size={16} className="mr-2" />保存所有设置</>
           )}
         </Button>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
+        {/* 第一列：基础配置与安全 */}
+        <div className="space-y-6">
+
+          {/* 缓存设置 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <SettingsIcon size={16} />
+                缓存设置
+              </CardTitle>
+              <CardDescription>DNS 查询结果缓存配置</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SettingRow
+                label="缓存 TTL"
+                description="DNS 响应缓存时间（秒），0 表示禁用缓存"
+              >
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={0}
+                    max={86400}
+                    value={current.cache_ttl ?? 300}
+                    onChange={(e) =>
+                      setForm({ ...form, cache_ttl: Number(e.target.value) })
+                    }
+                    className="w-28"
+                  />
+                  <span className="text-sm text-muted-foreground">秒</span>
+                </div>
+              </SettingRow>
+            </CardContent>
+          </Card>
+
+
+          {/* 安全过滤 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Shield size={16} />
+                安全过滤
+              </CardTitle>
+              <CardDescription>额外的内容过滤选项</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SettingRow
+                label="安全搜索"
+                description="强制使用 Google/Bing/YouTube 的安全搜索模式"
+              >
+                <Switch
+                  checked={current.safe_search_enabled ?? false}
+                  onCheckedChange={(v) => setForm({ ...form, safe_search_enabled: v })}
+                />
+              </SettingRow>
+              <SettingRow
+                label="家长控制"
+                description="拦截成人内容相关域名"
+              >
+                <Switch
+                  checked={current.parental_control_enabled ?? false}
+                  onCheckedChange={(v) => setForm({ ...form, parental_control_enabled: v })}
+                />
+              </SettingRow>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 第二列：数据保留与日志 */}
+        <div className="space-y-6">
+          {/* 数据保留 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>数据保留</CardTitle>
+              <CardDescription>查询日志和统计数据的保留周期</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <SettingRow
+                label="查询日志保留"
+                description="DNS 查询日志的保留天数"
+              >
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={current.query_log_retention_days ?? 30}
+                    onChange={(e) =>
+                      setForm({ ...form, query_log_retention_days: Number(e.target.value) })
+                    }
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">天</span>
+                </div>
+              </SettingRow>
+              <SettingRow
+                label="统计数据保留"
+                description="Dashboard 统计数据的保留天数"
+              >
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    min={1}
+                    max={365}
+                    value={current.stats_retention_days ?? 90}
+                    onChange={(e) =>
+                      setForm({ ...form, stats_retention_days: Number(e.target.value) })
+                    }
+                    className="w-24"
+                  />
+                  <span className="text-sm text-muted-foreground">天</span>
+                </div>
+              </SettingRow>
+            </CardContent>
+          </Card>
+
+          {/* 故障转移日志 */}
+          <Card>
+            <CardHeader>
+              <CardTitle>故障转移日志</CardTitle>
+              <CardDescription>Upstream 切换历史记录</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {failoverLog && failoverLog.length > 0 ? (
+                <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2 custom-scrollbar">
+                  {failoverLog.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="text-sm py-2 border-b last:border-0"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-muted-foreground">
+                          {new Date(entry.timestamp).toLocaleString('zh-CN')}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded text-xs ${entry.action === 'failover_triggered' ? 'bg-yellow-100 text-yellow-800' :
+                            entry.action === 'recovered' ? 'bg-green-100 text-green-800' :
+                              'bg-red-100 text-red-800'
+                          }`}>
+                          {entry.action}
+                        </span>
+                      </div>
+                      <div className="text-muted-foreground text-xs mt-1">
+                        Upstream: {entry.upstream_id}
+                        {entry.reason && ` - ${entry.reason}`}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted-foreground text-sm">
+                  暂无故障转移记录
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* 第三列：高级网络与上游服务器 */}
+        <div className="space-y-6 lg:col-span-2 xl:col-span-1">
+
+          {/* Upstream 管理 */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <Server size={16} />
+                  DNS 上游服务器
+                </span>
+                <Button size="sm" onClick={handleCreateUpstream}>
+                  <Plus size={14} className="mr-1" />添加
+                </Button>
+              </CardTitle>
+              <CardDescription>配置上游 DNS 服务器和故障转移策略</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {upstreamsLoading ? (
+                <div className="flex justify-center py-8">
+                  <RefreshCw size={24} className="animate-spin text-muted-foreground" />
+                </div>
+              ) : upstreams && upstreams.length > 0 ? (
+                <div className="space-y-3">
+                  {upstreams.map((upstream) => (
+                    <div
+                      key={upstream.id}
+                      className="border rounded-lg p-4 space-y-3"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span
+                              className={`w-2.5 h-2.5 rounded-full ${getStatusColor(upstream.health_status)}`}
+                              title={upstream.health_status}
+                            />
+                            <h4 className="font-medium">{upstream.name}</h4>
+                            <span className="text-xs bg-muted px-2 py-0.5 rounded">
+                              优先级 {upstream.priority}
+                            </span>
+                          </div>
+                          <div className="text-sm text-muted-foreground space-y-1">
+                            <div>
+                              地址: {upstream.addresses.join(', ')}
+                            </div>
+                            {testResults[upstream.id] && (
+                              <div className={`text-xs ${testResults[upstream.id]?.success ? 'text-green-600' : 'text-red-600'}`}>
+                                {testResults[upstream.id]?.success
+                                  ? `测试通过 (${testResults[upstream.id]?.latency_ms}ms)`
+                                  : `测试失败: ${testResults[upstream.id]?.error}`}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleEditUpstream(upstream)}
+                          >
+                            编辑
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleTestUpstream(upstream.id)}
+                            disabled={testingUpstream === upstream.id}
+                          >
+                            {testingUpstream === upstream.id ? (
+                              <RefreshCw size={14} className="animate-spin" />
+                            ) : (
+                              <Activity size={14} />
+                            )}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => handleDeleteUpstream(upstream.id, upstream.name)}
+                          >
+                            <Trash2 size={14} className="text-destructive" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                        <span>检查间隔: {upstream.health_check_interval}s</span>
+                        <span>超时: {upstream.health_check_timeout}s</span>
+                        <span>阈值: {upstream.failover_threshold}</span>
+                        <span>启用: {upstream.is_active ? '是' : '否'}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  暂无上游服务器，点击"添加"创建
+                </div>
+              )}
+              <div className="mt-4 pt-4 border-t">
+                <Button
+                  variant="outline"
+                  onClick={() => failoverMutation.mutate()}
+                  disabled={failoverMutation.isPending}
+                  className="w-full"
+                >
+                  <Zap size={16} className="mr-2" />
+                  {failoverMutation.isPending ? '切换中...' : '手动故障转移'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+        </div>
       </div>
 
       {/* Upstream Dialog */}

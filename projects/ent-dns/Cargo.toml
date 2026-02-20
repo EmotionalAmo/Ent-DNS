@@ -20,7 +20,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip",
 
 # DNS protocol
 hickory-proto = "0.24"
-hickory-resolver = { version = "0.24", features = ["tokio-runtime", "dns-over-https-rustls", "dns-over-tls"] }
+hickory-resolver = { version = "0.24", features = ["tokio-runtime", "dns-over-https-rustls", "dns-over-tls", "dnssec-ring"] }
 
 # Database
 sqlx = { version = "0.8", features = ["sqlite", "runtime-tokio-rustls", "migrate", "chrono", "uuid"] }
@@ -49,6 +49,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 # Error handling
 thiserror = "2"
 anyhow = "1"
+
+# Base64 encoding (used by DoH GET endpoint — RFC 8484)
+base64 = "0.22"
 
 # Utilities
 uuid = { version = "1", features = ["v4", "serde"] }

@@ -120,9 +120,13 @@ async fn main() -> Result<()> {
         });
     }
 
+    // Build a single DnsHandler shared between the DNS server (UDP/TCP) and the
+    // API server (DoH endpoint).  Both use the same filter, cache, and log writer.
+    let dns_handler = dns::build_handler(&cfg, db_pool.clone(), filter.clone(), metrics.clone(), query_log_tx.clone()).await?;
+
     tokio::try_join!(
-        dns::serve(cfg.clone(), db_pool.clone(), filter.clone(), metrics.clone(), query_log_tx.clone()),
-        api::serve(cfg.clone(), db_pool.clone(), filter.clone(), metrics.clone(), query_log_tx),
+        dns::serve(dns_handler.clone(), &cfg),
+        api::serve(cfg.clone(), db_pool.clone(), filter.clone(), metrics.clone(), query_log_tx, dns_handler),
     )?;
 
     Ok(())

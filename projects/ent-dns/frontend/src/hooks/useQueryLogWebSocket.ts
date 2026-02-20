@@ -18,6 +18,25 @@ interface Options {
   maxEntries?: number;
 }
 
+/**
+ * Fetch a one-time WebSocket ticket from the server.
+ * This avoids placing the long-lived JWT in the WebSocket URL
+ * (which would expose it in server logs, browser history, and Referer headers).
+ */
+async function fetchWsTicket(token: string): Promise<string | null> {
+  try {
+    const resp = await fetch('/api/v1/ws/ticket', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) return null;
+    const data = await resp.json();
+    return data.ticket ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export function useQueryLogWebSocket({ maxEntries = 100 }: Options = {}) {
   const [wsStatus, setWsStatus] = useState<WsStatus>('disconnected');
   const [liveEntries, setLiveEntries] = useState<LiveQueryEntry[]>([]);
@@ -28,17 +47,24 @@ export function useQueryLogWebSocket({ maxEntries = 100 }: Options = {}) {
 
   const clearEntries = useCallback(() => setLiveEntries([]), []);
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (!mountedRef.current) return;
 
     const token = useAuthStore.getState().token;
     if (!token) return;
 
+    setWsStatus('connecting');
+
+    // Obtain a one-time ticket; the JWT never appears in the WS URL
+    const ticket = await fetchWsTicket(token);
+    if (!ticket || !mountedRef.current) {
+      setWsStatus('error');
+      return;
+    }
+
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const url = `${protocol}//${host}/api/v1/ws/query-log?token=${encodeURIComponent(token)}`;
-
-    setWsStatus('connecting');
+    const url = `${protocol}//${host}/api/v1/ws/query-log?ticket=${encodeURIComponent(ticket)}`;
 
     const ws = new WebSocket(url);
     wsRef.current = ws;

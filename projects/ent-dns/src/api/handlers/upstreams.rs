@@ -217,7 +217,12 @@ pub async fn update(
         .ok_or_else(|| AppError::NotFound(format!("Upstream {} not found", id)))?;
 
     let name = body.name.unwrap_or(old_name);
-    let addresses = body.addresses.map(|a| serde_json::to_string(&a).unwrap()).unwrap_or(old_addresses);
+    let addresses = if let Some(a) = body.addresses {
+        serde_json::to_string(&a)
+            .map_err(|e| AppError::Internal(format!("Failed to serialize addresses: {}", e)))?
+    } else {
+        old_addresses
+    };
     let priority = body.priority.unwrap_or(old_priority);
     let is_active = body.is_active.map(|b| if b { 1 } else { 0 }).unwrap_or(old_is_active);
     let health_check_enabled = body.health_check_enabled.map(|b| if b { 1 } else { 0 }).unwrap_or(old_health_check_enabled);
@@ -394,6 +399,7 @@ pub async fn trigger_failover(
 
 pub async fn failover_log(
     State(state): State<Arc<AppState>>,
+    _auth: AuthUser,
 ) -> AppResult<Json<Value>> {
     let rows: Vec<(String, String, String, Option<String>, String)> = sqlx::query_as(
         "SELECT id, upstream_id, action, reason, timestamp

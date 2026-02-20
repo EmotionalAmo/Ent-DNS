@@ -2,28 +2,66 @@ use axum::{
     extract::{State, Query, WebSocketUpgrade, ws::{WebSocket, Message}},
     http::StatusCode,
     response::{IntoResponse, Response},
+    Json,
 };
 use serde::Deserialize;
+use serde_json::json;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::broadcast;
+use uuid::Uuid;
 use crate::api::AppState;
-use crate::auth::jwt;
+use crate::api::middleware::auth::AuthUser;
+use crate::error::AppResult;
+
+/// Ticket TTL: 30 seconds is enough time to open the WebSocket connection.
+const WS_TICKET_TTL: Duration = Duration::from_secs(30);
+
+/// Issue a one-time WebSocket ticket.
+/// The client calls this authenticated REST endpoint, then immediately opens the WS
+/// connection using ?ticket=<uuid> instead of embedding the long-lived JWT in the URL.
+/// This prevents the JWT from appearing in server logs, browser history, and Referer headers.
+pub async fn issue_ticket(
+    State(state): State<Arc<AppState>>,
+    _auth: AuthUser,
+) -> AppResult<Json<serde_json::Value>> {
+    // Evict expired tickets (lazy cleanup)
+    state.ws_tickets.retain(|_, issued_at: &mut Instant| {
+        issued_at.elapsed() < WS_TICKET_TTL
+    });
+
+    let ticket = Uuid::new_v4().to_string();
+    state.ws_tickets.insert(ticket.clone(), Instant::now());
+
+    Ok(Json(json!({ "ticket": ticket, "expires_in": WS_TICKET_TTL.as_secs() })))
+}
 
 #[derive(Deserialize)]
 pub struct WsParams {
-    token: String,
+    ticket: String,
 }
 
 /// WebSocket endpoint for real-time query log streaming.
-/// JWT is passed as a URL query parameter since WebSocket can't send custom headers.
+/// Authenticated via one-time ticket (see `issue_ticket`); ticket is consumed on use.
 pub async fn query_log_ws(
     State(state): State<Arc<AppState>>,
     Query(params): Query<WsParams>,
     ws: WebSocketUpgrade,
 ) -> Response {
-    if jwt::verify(&params.token, &state.jwt_secret).is_err() {
-        return (StatusCode::UNAUTHORIZED, "Invalid or expired token").into_response();
+    // Validate and consume the ticket atomically
+    match state.ws_tickets.remove(&params.ticket) {
+        Some((_, issued_at)) if issued_at.elapsed() < WS_TICKET_TTL => {
+            // Ticket valid — proceed with upgrade
+        }
+        Some(_) => {
+            // Ticket found but expired — already removed above
+            return (StatusCode::UNAUTHORIZED, "WebSocket ticket expired").into_response();
+        }
+        None => {
+            return (StatusCode::UNAUTHORIZED, "Invalid or already-used WebSocket ticket").into_response();
+        }
     }
+
     let tx = state.query_log_tx.clone();
     ws.on_upgrade(move |socket| handle_socket(socket, tx))
         .into_response()
@@ -56,3 +94,5 @@ async fn handle_socket(mut socket: WebSocket, tx: broadcast::Sender<serde_json::
         }
     }
 }
+
+

@@ -50,12 +50,19 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/metrics", get(handlers::metrics::prometheus_metrics))
         // Backup (admin only)
         .route("/api/v1/admin/backup", get(handlers::backup::create_backup))
-        // WebSocket: real-time query log stream (JWT via query param)
+        // WebSocket: issue one-time ticket (authenticated), then connect via ticket
+        .route("/api/v1/ws/ticket", post(handlers::ws::issue_ticket))
         .route("/api/v1/ws/query-log", get(handlers::ws::query_log_ws))
+        // DNS-over-HTTPS (RFC 8484) — public endpoint, no auth required
+        .route("/dns-query", get(handlers::doh::get_query).post(handlers::doh::post_query))
         .with_state(state)
         // 前端静态文件 + SPA fallback（必须在 with_state 之后）
-        .fallback_service(
-            ServeDir::new("frontend/dist")
-                .fallback(ServeFile::new("frontend/dist/index.html"))
-        )
+        // ENT_DNS_STATIC_DIR overrides the default relative path (fixes L-2)
+        .fallback_service({
+            let static_dir = std::env::var("ENT_DNS_STATIC_DIR")
+                .unwrap_or_else(|_| "frontend/dist".to_string());
+            let fallback = format!("{}/index.html", static_dir);
+            ServeDir::new(static_dir)
+                .fallback(ServeFile::new(fallback))
+        })
 }

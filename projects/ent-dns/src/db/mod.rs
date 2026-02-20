@@ -6,6 +6,7 @@ use crate::config::Config;
 
 pub mod models;
 pub mod audit;
+pub mod query_log_writer;
 
 pub type DbPool = SqlitePool;
 

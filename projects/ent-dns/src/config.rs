@@ -29,6 +29,10 @@ pub struct ApiConfig {
     pub port: u16,
     #[serde(default = "default_bind")]
     pub bind: String,
+    /// Allowed CORS origins. Defaults to localhost dev ports.
+    /// Set ENT_DNS__API__CORS_ALLOWED_ORIGINS in production.
+    #[serde(default = "default_cors_allowed_origins")]
+    pub cors_allowed_origins: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -49,6 +53,13 @@ fn default_bind() -> String { "0.0.0.0".to_string() }
 fn default_api_port() -> u16 { 8080 }
 fn default_db_path() -> String { "./ent-dns.db".to_string() }
 fn default_jwt_expiry() -> u64 { 24 }
+fn default_cors_allowed_origins() -> Vec<String> {
+    vec![
+        "http://localhost:5173".to_string(),
+        "http://localhost:5174".to_string(),
+        "http://localhost:8080".to_string(),
+    ]
+}
 
 const DEFAULT_JWT_SECRET: &str = "change-me-in-production";
 

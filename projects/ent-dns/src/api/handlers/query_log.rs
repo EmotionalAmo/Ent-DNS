@@ -9,6 +9,7 @@ use serde_json::{json, Value};
 use std::sync::Arc;
 use crate::api::AppState;
 use crate::api::middleware::auth::AuthUser;
+use crate::api::middleware::rbac::AdminUser;
 use crate::error::AppResult;
 
 #[derive(Deserialize)]
@@ -114,7 +115,7 @@ fn default_export_format() -> String {
 
 pub async fn export(
     State(state): State<Arc<AppState>>,
-    _auth: AuthUser,
+    _admin: AdminUser,
     Query(params): Query<ExportParams>,
 ) -> impl IntoResponse {
     let rows: Vec<(i64, String, String, Option<String>, String, String, Option<String>, String, Option<String>, Option<i64>)> =

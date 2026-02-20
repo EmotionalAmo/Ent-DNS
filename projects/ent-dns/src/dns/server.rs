@@ -1,18 +1,11 @@
 use anyhow::Result;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{UdpSocket, TcpListener};
-use tokio::sync::broadcast;
 use std::sync::Arc;
-use crate::config::Config;
-use crate::db::DbPool;
-use crate::metrics::DnsMetrics;
-use super::filter::FilterEngine;
 use super::handler::DnsHandler;
 
-pub async fn run(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Arc<DnsMetrics>, query_log_tx: broadcast::Sender<serde_json::Value>) -> Result<()> {
-    let bind_addr = format!("{}:{}", cfg.dns.bind, cfg.dns.port);
-
-    let handler = Arc::new(DnsHandler::new(cfg, db, filter, metrics, query_log_tx).await?);
+/// Start the DNS server (UDP + TCP) using the provided shared handler.
+pub async fn run(handler: Arc<DnsHandler>, bind_addr: String) -> Result<()> {
 
     // ── UDP server ──────────────────────────────────────────────
     let udp_socket = Arc::new(UdpSocket::bind(&bind_addr).await?);
@@ -38,7 +31,7 @@ pub async fn run(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Ar
                         let mut data = vec![0u8; msg_len];
                         if stream.read_exact(&mut data).await.is_err() { return; }
 
-                        match h.handle_udp(data, client_ip).await {
+                        match h.handle(data, client_ip).await {
                             Ok(response) => {
                                 let len = (response.len() as u16).to_be_bytes();
                                 let _ = stream.write_all(&len).await;
@@ -64,7 +57,7 @@ pub async fn run(cfg: Config, db: DbPool, filter: Arc<FilterEngine>, metrics: Ar
                 let socket = udp_socket.clone();
                 let client_ip = peer.ip().to_string();
                 tokio::spawn(async move {
-                    match handler.handle_udp(data, client_ip).await {
+                    match handler.handle(data, client_ip).await {
                         Ok(response) => {
                             if let Err(e) = socket.send_to(&response, peer).await {
                                 tracing::warn!("Failed to send DNS response: {}", e);

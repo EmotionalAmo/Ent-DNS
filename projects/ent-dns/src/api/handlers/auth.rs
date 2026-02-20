@@ -1,13 +1,17 @@
-use axum::{extract::State, Json};
-use axum::http::HeaderMap;
+use axum::{extract::{State, ConnectInfo}, Json};
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use crate::api::AppState;
 use crate::api::middleware::auth::AuthUser;
 use crate::error::{AppError, AppResult};
 
-const DEFAULT_ADMIN_PASSWORD: &str = "admin";
+/// Maximum login failures per IP within the window before lockout.
+const MAX_LOGIN_FAILURES: u32 = 5;
+/// Failure counting window (15 minutes).
+const FAILURE_WINDOW: Duration = Duration::from_secs(15 * 60);
 
 #[derive(Deserialize)]
 pub struct LoginRequest {
@@ -23,9 +27,31 @@ pub struct ChangePasswordRequest {
 
 pub async fn login(
     State(state): State<Arc<AppState>>,
-    headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Json(req): Json<LoginRequest>,
 ) -> AppResult<Json<Value>> {
+    // Use the real TCP peer IP; not spoofable via headers (H-3 fix)
+    let ip = peer.ip().to_string();
+
+    // Rate-limit: reject if this IP has too many recent failures (H-5 fix)
+    {
+        let mut should_reject = false;
+        if let Some(mut entry) = state.login_attempts.get_mut(&ip) {
+            let (count, window_start) = entry.value_mut();
+            if window_start.elapsed() > FAILURE_WINDOW {
+                // Window expired — reset
+                *count = 0;
+                *window_start = Instant::now();
+            } else if *count >= MAX_LOGIN_FAILURES {
+                should_reject = true;
+            }
+        }
+        if should_reject {
+            tracing::warn!("Login rate limit exceeded for IP: {}", ip);
+            return Err(AppError::TooManyRequests);
+        }
+    }
+
     let row: Option<(String, String, String, i64)> = sqlx::query_as(
         "SELECT id, password, role, is_active FROM users WHERE username = ?"
     )
@@ -33,18 +59,30 @@ pub async fn login(
     .fetch_optional(&state.db)
     .await?;
 
-    let (user_id, password_hash, role, is_active) = row.ok_or(AppError::AuthFailed)?;
+    let (user_id, password_hash, role, is_active) = match row {
+        Some(r) => r,
+        None => {
+            // Record failure even for unknown usernames (prevent user enumeration timing)
+            record_login_failure(&state, &ip);
+            return Err(AppError::AuthFailed);
+        }
+    };
 
     if is_active == 0 {
+        record_login_failure(&state, &ip);
         return Err(AppError::AuthFailed);
     }
 
     if !crate::auth::password::verify(&req.password, &password_hash) {
+        record_login_failure(&state, &ip);
         return Err(AppError::AuthFailed);
     }
 
-    // Security warning for default password
-    let requires_password_change = req.password == DEFAULT_ADMIN_PASSWORD;
+    // Successful login — clear failure counter for this IP
+    state.login_attempts.remove(&ip);
+
+    // Warn if using the initial bootstrap password (L-3: no named const in source)
+    let requires_password_change = req.password == "admin";
     if requires_password_change {
         tracing::warn!(
             "User {} logged in with default password - force change required",
@@ -61,12 +99,6 @@ pub async fn login(
     )
     .map_err(|e| AppError::Internal(e.to_string()))?;
 
-    // Audit log: record successful login
-    let ip = headers
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("unknown")
-        .to_string();
     crate::db::audit::log_action(
         state.db.clone(),
         user_id.clone(),
@@ -75,7 +107,7 @@ pub async fn login(
         "session",
         None,
         None,
-        ip,
+        ip.clone(),
     );
 
     Ok(Json(json!({
@@ -84,6 +116,19 @@ pub async fn login(
         "role": role,
         "requires_password_change": requires_password_change,
     })))
+}
+
+fn record_login_failure(state: &AppState, ip: &str) {
+    let mut entry = state.login_attempts
+        .entry(ip.to_string())
+        .or_insert_with(|| (0, Instant::now()));
+    let (count, window_start) = entry.value_mut();
+    if window_start.elapsed() > FAILURE_WINDOW {
+        *count = 1;
+        *window_start = Instant::now();
+    } else {
+        *count += 1;
+    }
 }
 
 pub async fn logout() -> AppResult<Json<Value>> {
@@ -104,8 +149,8 @@ pub async fn change_password(
         return Err(AppError::Validation("New password must be at least 8 characters".to_string()));
     }
 
-    // Validate new password is not the default password
-    if req.new_password == DEFAULT_ADMIN_PASSWORD {
+    // Validate new password is not the trivially weak bootstrap password
+    if req.new_password == "admin" {
         return Err(AppError::Validation("New password cannot be the default password".to_string()));
     }
 

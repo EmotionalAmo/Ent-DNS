@@ -44,14 +44,25 @@ pub async fn fetch_remote_filter(url: &str) -> Result<String> {
         anyhow::bail!("HTTP error: {}", response.status());
     }
 
-    let content = response
-        .text()
+    // Reject early using Content-Length header before reading any body (M-3 fix)
+    if let Some(len) = response.content_length() {
+        if len > MAX_RESPONSE_SIZE as u64 {
+            anyhow::bail!("Response too large: {} bytes (Content-Length)", len);
+        }
+    }
+
+    // Read body as raw bytes to enforce size limit before UTF-8 decoding
+    let bytes = response
+        .bytes()
         .await
         .context("Failed to read response body")?;
 
-    if content.len() > MAX_RESPONSE_SIZE {
-        anyhow::bail!("Response too large: {} bytes", content.len());
+    if bytes.len() > MAX_RESPONSE_SIZE {
+        anyhow::bail!("Response too large: {} bytes", bytes.len());
     }
+
+    let content = String::from_utf8(bytes.to_vec())
+        .context("Filter list response is not valid UTF-8")?;
 
     Ok(content)
 }
@@ -159,18 +170,20 @@ pub async fn sync_filter_list(pool: &DbPool, filter_id: &str, url: &str) -> Resu
     info!("Parsed {} rules for filter {} ({} block, {} allow)",
           total_rules, filter_id, block_rules.len(), allow_rules.len());
 
-    // Delete old rules for this filter
+    // Wrap DELETE + INSERT in a transaction so a crash mid-sync never leaves rules empty (H-4 fix)
     let filter_prefix = format!("filter:{}", filter_id);
+    let now = Utc::now().to_rfc3339();
+    let mut inserted = 0i64;
+
+    let mut tx = pool.begin().await.context("Failed to begin transaction")?;
+
     sqlx::query("DELETE FROM custom_rules WHERE created_by = ?")
         .bind(&filter_prefix)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .context("Failed to delete old rules")?;
 
     // Insert new blocking rules
-    let now = Utc::now().to_rfc3339();
-    let mut inserted = 0i64;
-
     for rule in block_rules {
         let id = uuid::Uuid::new_v4().to_string();
         let result = sqlx::query(
@@ -181,7 +194,7 @@ pub async fn sync_filter_list(pool: &DbPool, filter_id: &str, url: &str) -> Resu
         .bind(&rule)
         .bind(&filter_prefix)
         .bind(&now)
-        .execute(pool)
+        .execute(&mut *tx)
         .await;
 
         if result.is_ok() {
@@ -200,7 +213,7 @@ pub async fn sync_filter_list(pool: &DbPool, filter_id: &str, url: &str) -> Resu
         .bind(&rule)
         .bind(&filter_prefix)
         .bind(&now)
-        .execute(pool)
+        .execute(&mut *tx)
         .await;
 
         if result.is_ok() {
@@ -208,7 +221,9 @@ pub async fn sync_filter_list(pool: &DbPool, filter_id: &str, url: &str) -> Resu
         }
     }
 
-    // Update filter list metadata
+    tx.commit().await.context("Failed to commit filter sync transaction")?;
+
+    // Update filter list metadata (outside the transaction — non-critical metadata)
     sqlx::query(
         "UPDATE filter_lists SET rule_count = ?, last_updated = ? WHERE id = ?"
     )

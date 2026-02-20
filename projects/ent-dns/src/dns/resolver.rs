@@ -13,15 +13,22 @@ pub struct DnsResolver {
 
 impl DnsResolver {
     /// Default resolver using Cloudflare (plain UDP fallback for dev compatibility).
+    ///
+    /// DNSSEC validation is enabled: Cloudflare's resolvers are DNSSEC-aware and
+    /// will return authenticated responses.  hickory-resolver with the `dnssec-ring`
+    /// feature will validate signatures locally and return a `ProtoError` (mapped to
+    /// ServFail) for any response that fails DNSSEC verification.
     pub async fn new(cfg: &Config) -> Result<Self> {
         let mut opts = ResolverOpts::default();
         opts.cache_size = 0; // We handle caching ourselves
         opts.use_hosts_file = false;
+        // Task 4: enable DNSSEC validation
+        opts.validate = true;
 
         let resolver = TokioAsyncResolver::tokio(ResolverConfig::cloudflare(), opts);
 
         tracing::info!(
-            "DNS resolver initialized, upstreams: {:?}",
+            "DNS resolver initialized with DNSSEC validation, upstreams: {:?}",
             cfg.dns.upstreams
         );
         Ok(Self { inner: resolver })
@@ -68,12 +75,15 @@ impl DnsResolver {
         })
     }
 
+    /// Resolve a DNS query.  Returns the serialised DNS wire format response
+    /// together with the minimum TTL extracted from the answer records so the
+    /// caller can store it in the cache with a matching expiry.
     pub async fn resolve(
         &self,
         domain: &str,
         qtype: RecordType,
         request: &Message,
-    ) -> Result<Vec<u8>> {
+    ) -> Result<(Vec<u8>, Option<u32>)> {
         let mut response = Message::new();
         response.set_id(request.id());
         response.set_message_type(MessageType::Response);
@@ -84,17 +94,26 @@ impl DnsResolver {
             response.add_query(query.clone());
         }
 
+        let mut min_ttl: Option<u32> = None;
+
         match self.inner.lookup(domain, qtype).await {
             Ok(lookup) => {
                 response.set_response_code(ResponseCode::NoError);
                 for record in lookup.records() {
+                    // Track minimum TTL across all answer records (Task 2)
+                    let ttl = record.ttl();
+                    min_ttl = Some(match min_ttl {
+                        None => ttl,
+                        Some(current) => current.min(ttl),
+                    });
                     response.add_answer(record.clone());
                 }
                 tracing::debug!(
-                    "Resolved {} {:?}: {} records",
+                    "Resolved {} {:?}: {} records, min_ttl={:?}",
                     domain,
                     qtype,
-                    response.answer_count()
+                    response.answer_count(),
+                    min_ttl,
                 );
             }
             Err(e) => match e.kind() {
@@ -109,6 +128,6 @@ impl DnsResolver {
             },
         }
 
-        Ok(response.to_vec()?)
+        Ok((response.to_vec()?, min_ttl))
     }
 }
