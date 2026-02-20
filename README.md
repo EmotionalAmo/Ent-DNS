@@ -20,11 +20,18 @@
 | 自定义客户端上游 DNS（含 CIDR 匹配） | ✅ |
 | Web 管理界面（单端口，前后端合一） | ✅ |
 | JWT 登录 · RBAC 角色权限 | ✅ |
-| 实时查询日志（WebSocket） | ✅ |
-| Dashboard 趋势图 | ✅ |
+| 实时查询日志（WebSocket + 一次性 ticket） | ✅ |
+| Dashboard 趋势图（5 秒自动刷新） | ✅ |
+| Dashboard Top 10 被拦截域名 & 活跃客户端 | ✅ |
+| 拦截率周环比趋势 | ✅ |
 | Prometheus 指标 `/metrics` | ✅ |
+| 查询日志 CSV / JSON 导出 | ✅ |
 | 查询日志自动清理（可配置保留天数） | ✅ |
 | 过滤列表定时自动刷新 | ✅ |
+| 规则批量启用 / 禁用 | ✅ |
+| 首次登录强制改密保护 | ✅ |
+| 安全加固（CORS 白名单、登录限速、WS 防重放等） | ✅ |
+| 完整测试套件 | ✅ |
 | Docker 一键部署 | ✅ |
 
 ---
@@ -112,6 +119,9 @@ cd frontend && npm run dev
 | `ENT_DNS__API__PORT` | `8080` | HTTP API 端口（同时 serve 前端） |
 | `ENT_DNS__AUTH__JWT_SECRET` | ❌ 必填 | JWT 签名密钥，≥32 字符，用 `openssl rand -hex 32` 生成 |
 | `ENT_DNS__AUTH__JWT_EXPIRY_HOURS` | `24` | Token 有效期（小时） |
+| `ENT_DNS__API__CORS_ALLOWED_ORIGINS` | `*`（不推荐） | 生产环境设置为实际域名，如 `https://dns.example.com` |
+| `ENT_DNS_BACKUP_DIR` | `/tmp` | 数据库备份目录，生产建议设为安全路径 |
+| `ENT_DNS_STATIC_DIR` | `frontend/dist` | 前端静态文件目录，生产建议设为绝对路径 |
 
 > **安全注意**：`JWT_SECRET` 使用默认值或长度 < 32 字符时，服务会拒绝启动。
 
@@ -168,7 +178,8 @@ projects/ent-dns/
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/v1/rules` | GET/POST | 自定义规则（分页 + 搜索） |
-| `/api/v1/rules/{id}` | DELETE | 删除规则 |
+| `/api/v1/rules/{id}` | PUT/DELETE | 更新/删除 |
+| `/api/v1/rules/bulk` | POST | 批量启用 / 禁用规则 |
 | `/api/v1/filters` | GET/POST | 过滤列表 |
 | `/api/v1/filters/{id}` | PUT/DELETE | 更新/删除 |
 | `/api/v1/filters/{id}/refresh` | POST | 手动同步远程列表 |
@@ -176,14 +187,23 @@ projects/ent-dns/
 | `/api/v1/rewrites/{id}` | PUT/DELETE | 更新/删除 |
 | `/api/v1/clients` | GET/POST | 客户端配置（含 CIDR） |
 | `/api/v1/clients/{id}` | PUT/DELETE | 更新/删除 |
+| `/api/v1/settings/upstreams` | GET/POST | 上游 DNS 管理 |
+| `/api/v1/settings/upstreams/{id}` | GET/PUT/DELETE | 更新/删除 |
+| `/api/v1/settings/upstreams/{id}/test` | POST | 测试上游连通性 |
+| `/api/v1/settings/upstreams/failover` | POST | 配置故障转移 |
+| `/api/v1/settings/upstreams/failover-log` | GET | 故障转移日志 |
 
 ### 监控 & 日志
 | 端点 | 方法 | 说明 |
 |------|------|------|
-| `/api/v1/dashboard/stats` | GET | 统计数据 |
+| `/api/v1/dashboard/stats` | GET | 统计数据（含周环比拦截率趋势） |
 | `/api/v1/dashboard/query-trend` | GET | 查询趋势（?hours=N） |
-| `/api/v1/query-log` | GET | 查询日志（分页/过滤/导出） |
-| `/api/v1/ws/query-log?token=JWT` | WS | 实时查询日志推送 |
+| `/api/v1/dashboard/top-blocked-domains` | GET | Top 10 被拦截域名 |
+| `/api/v1/dashboard/top-clients` | GET | Top 10 活跃客户端 |
+| `/api/v1/query-log` | GET | 查询日志（分页/过滤） |
+| `/api/v1/query-log/export` | GET | 导出日志（?format=csv\|json） |
+| `/api/v1/ws/ticket` | POST | 获取一次性 WebSocket ticket |
+| `/api/v1/ws/query-log?ticket=TICKET` | WS | 实时查询日志推送 |
 | `/metrics` | GET | Prometheus 指标 |
 
 ### 管理员
@@ -202,7 +222,18 @@ projects/ent-dns/
 |--------|------|------|
 | `admin` | `admin` | super_admin |
 
-> 首次登录后系统会强制要求修改密码。
+> 首次登录后系统会强制要求修改密码，修改前无法访问其他页面。
+
+---
+
+## 安全特性
+
+- **登录限速**：同一 IP 15 分钟内失败 5 次后锁定
+- **CORS 白名单**：生产环境通过 `ENT_DNS__API__CORS_ALLOWED_ORIGINS` 限制来源
+- **WebSocket 防重放**：WS 连接使用一次性 ticket（30 秒有效），避免 JWT 暴露在 URL 历史
+- **过滤列表事务**：订阅同步使用显式 SQLite 事务（DELETE + INSERT 原子操作）
+- **内容长度检查**：订阅下载前校验 Content-Length，防止超大响应攻击
+- **客户端配置缓存**：moka 缓存（60s TTL，4096 容量）防止 DNS 热路径 DB 击穿
 
 ---
 
