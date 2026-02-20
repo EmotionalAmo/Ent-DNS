@@ -30,7 +30,18 @@ export interface DashboardStats {
   filter_rules: number;
   filter_lists: number;
   block_rate: number;
+  last_week_block_rate: number;
   clients: number;
+}
+
+export interface TopDomainEntry {
+  domain: string;
+  count: number;
+}
+
+export interface TopClientEntry {
+  client_ip: string;
+  count: number;
 }
 
 // Rules Types — matches backend: {id, rule, comment, is_enabled, created_by, created_at}

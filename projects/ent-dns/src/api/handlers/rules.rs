@@ -156,3 +156,62 @@ pub async fn delete(
 
     Ok(Json(json!({"success": true})))
 }
+
+#[derive(Deserialize)]
+pub struct BulkActionRequest {
+    pub ids: Vec<String>,
+    pub action: String, // "enable", "disable", "delete"
+}
+
+pub async fn bulk_action(
+    State(state): State<Arc<AppState>>,
+    _auth: AuthUser,
+    Json(req): Json<BulkActionRequest>,
+) -> AppResult<Json<Value>> {
+    if req.ids.is_empty() {
+        return Ok(Json(json!({"affected": 0})));
+    }
+
+    let placeholders = req.ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+
+    let affected: u64 = match req.action.as_str() {
+        "enable" => {
+            let sql = format!(
+                "UPDATE custom_rules SET is_enabled = 1 WHERE id IN ({}) AND created_by NOT LIKE 'filter:%'",
+                placeholders
+            );
+            let mut q = sqlx::query(&sql);
+            for id in &req.ids {
+                q = q.bind(id);
+            }
+            q.execute(&state.db).await?.rows_affected()
+        }
+        "disable" => {
+            let sql = format!(
+                "UPDATE custom_rules SET is_enabled = 0 WHERE id IN ({}) AND created_by NOT LIKE 'filter:%'",
+                placeholders
+            );
+            let mut q = sqlx::query(&sql);
+            for id in &req.ids {
+                q = q.bind(id);
+            }
+            q.execute(&state.db).await?.rows_affected()
+        }
+        "delete" => {
+            let sql = format!(
+                "DELETE FROM custom_rules WHERE id IN ({}) AND created_by NOT LIKE 'filter:%'",
+                placeholders
+            );
+            let mut q = sqlx::query(&sql);
+            for id in &req.ids {
+                q = q.bind(id);
+            }
+            q.execute(&state.db).await?.rows_affected()
+        }
+        _ => return Err(AppError::Validation("action must be enable, disable, or delete".to_string())),
+    };
+
+    state.filter.reload().await.map_err(|e| AppError::Internal(e.to_string()))?;
+
+    Ok(Json(json!({"affected": affected})))
+}

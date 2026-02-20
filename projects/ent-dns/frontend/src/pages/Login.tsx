@@ -12,6 +12,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const setAuth = useAuthStore((state) => state.setAuth);
+  const setRequiresPasswordChange = useAuthStore((state) => state.setRequiresPasswordChange);
   const setLoading = useAuthStore((state) => state.setLoading);
   const isLoading = useAuthStore((state) => state.isLoading);
 
@@ -31,8 +32,15 @@ export default function LoginPage() {
       const response = await authApi.login({ username, password });
       const user: AuthUser = { username, role: response.role };
       setAuth(response.token, user);
-      toast.success('登录成功');
-      navigate(from, { replace: true });
+      if (response.requires_password_change) {
+        setRequiresPasswordChange(true);
+        toast.warning('请先修改默认密码');
+        navigate('/change-password', { replace: true });
+      } else {
+        setRequiresPasswordChange(false);
+        toast.success('登录成功');
+        navigate(from, { replace: true });
+      }
     } catch (error: any) {
       toast.error(error.message || '用户名或密码错误');
     } finally {

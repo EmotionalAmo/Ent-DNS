@@ -1,5 +1,6 @@
 import { apiClient, type DashboardStats } from './';
 import type { QueryTrendData } from '@/components/dashboard/QueryTrendChart';
+import type { TopDomainEntry, TopClientEntry } from './types';
 
 /**
  * Get dashboard statistics
@@ -30,8 +31,30 @@ export async function getQueryTrend(hours = 24): Promise<QueryTrendData[]> {
   }));
 }
 
+/**
+ * Get top 10 blocked domains in the past N hours
+ */
+export async function getTopBlockedDomains(hours = 24): Promise<TopDomainEntry[]> {
+  const response = await apiClient.get<TopDomainEntry[]>(
+    `/api/v1/dashboard/top-blocked-domains?hours=${hours}`
+  );
+  return response.data;
+}
+
+/**
+ * Get top 10 most active clients in the past N hours
+ */
+export async function getTopClients(hours = 24): Promise<TopClientEntry[]> {
+  const response = await apiClient.get<TopClientEntry[]>(
+    `/api/v1/dashboard/top-clients?hours=${hours}`
+  );
+  return response.data;
+}
+
 // Export API object
 export const dashboardApi = {
   getStats: getDashboardStats,
   getQueryTrend,
+  getTopBlockedDomains,
+  getTopClients,
 };

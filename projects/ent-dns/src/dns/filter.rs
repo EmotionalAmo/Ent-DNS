@@ -41,6 +41,16 @@ impl FilterEngine {
             }
         }
 
+        // Safety guard: warn if total rules is approaching memory limits
+        const MAX_CUSTOM_RULES: usize = 100_000;
+        if total > MAX_CUSTOM_RULES {
+            tracing::warn!(
+                "FilterEngine: custom rule count ({}) exceeds MAX_CUSTOM_RULES ({}). \
+                 Consider reducing custom rules or increasing system memory.",
+                total, MAX_CUSTOM_RULES
+            );
+        }
+
         // Load filter list count
         let list_count: i64 = sqlx::query_scalar(
             "SELECT COUNT(*) FROM filter_lists WHERE is_enabled = 1"

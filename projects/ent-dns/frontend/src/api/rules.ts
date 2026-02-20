@@ -41,6 +41,11 @@ export const rulesApi = {
     await Promise.all(ids.map(id => this.deleteRule(id)));
   },
 
+  async bulkAction(ids: string[], action: 'enable' | 'disable' | 'delete'): Promise<{ affected: number }> {
+    const response = await apiClient.post<{ affected: number }>('/api/v1/rules/bulk', { ids, action });
+    return response.data;
+  },
+
   async exportRules(format: 'csv' | 'json'): Promise<Blob> {
     const response = await apiClient.get(`/api/v1/rules/export?format=${format}`, {
       responseType: 'blob',

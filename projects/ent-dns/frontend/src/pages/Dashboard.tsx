@@ -2,10 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { dashboardApi } from '@/api';
 import { QueryTrendChart } from '@/components/dashboard/QueryTrendChart';
-import { Activity, Shield, Database, Server, Filter, Settings } from 'lucide-react';
+import { Activity, Shield, Database, Server, Filter, Settings, TrendingUp, TrendingDown, Minus } from 'lucide-react';
 
 export default function DashboardPage() {
-  // Fetch dashboard stats
+  // Fetch dashboard stats (refresh every 30s)
   const { data: stats, isLoading, error, refetch } = useQuery({
     queryKey: ['dashboard', 'stats'],
     queryFn: dashboardApi.getStats,
@@ -13,12 +13,28 @@ export default function DashboardPage() {
     staleTime: 10000,
   });
 
-  // Fetch trend chart data
+  // Fetch trend chart data (refresh every 5s for near-realtime feel)
   const { data: trendData = [], isLoading: trendLoading } = useQuery({
     queryKey: ['dashboard', 'query-trend'],
     queryFn: () => dashboardApi.getQueryTrend(24),
-    refetchInterval: 60000,
-    staleTime: 30000,
+    refetchInterval: 5000,
+    staleTime: 4000,
+  });
+
+  // Fetch Top 10 blocked domains
+  const { data: topDomains = [], isLoading: topDomainsLoading } = useQuery({
+    queryKey: ['dashboard', 'top-blocked-domains'],
+    queryFn: () => dashboardApi.getTopBlockedDomains(24),
+    refetchInterval: 30000,
+    staleTime: 20000,
+  });
+
+  // Fetch Top 10 active clients
+  const { data: topClients = [], isLoading: topClientsLoading } = useQuery({
+    queryKey: ['dashboard', 'top-clients'],
+    queryFn: () => dashboardApi.getTopClients(24),
+    refetchInterval: 30000,
+    staleTime: 20000,
   });
 
   const totalQueries = stats?.total_queries ?? 0;
@@ -26,6 +42,8 @@ export default function DashboardPage() {
   const cachedQueries = stats?.cached_queries ?? 0;
   const filterRules = stats?.filter_rules ?? 0;
   const filterLists = stats?.filter_lists ?? 0;
+  const blockRate = stats?.block_rate ?? 0;
+  const lastWeekBlockRate = stats?.last_week_block_rate ?? 0;
 
   // Format numbers
   const formatNumber = (num: number): string => {
@@ -35,8 +53,12 @@ export default function DashboardPage() {
   };
 
   // Calculate rates
-  const blockRate = totalQueries > 0 ? ((blockedQueries / totalQueries) * 100).toFixed(1) : '0.0';
+  const blockRateStr = totalQueries > 0 ? ((blockedQueries / totalQueries) * 100).toFixed(1) : '0.0';
   const cacheHitRate = totalQueries > 0 ? ((cachedQueries / totalQueries) * 100).toFixed(1) : '0.0';
+
+  // Week-over-week trend
+  const blockRateDiff = blockRate - lastWeekBlockRate;
+  const blockRateTrend = Math.abs(blockRateDiff) < 0.1 ? 'flat' : blockRateDiff > 0 ? 'up' : 'down';
 
   const statsCards = [
     {
@@ -48,7 +70,7 @@ export default function DashboardPage() {
     {
       title: '拦截查询',
       value: formatNumber(blockedQueries),
-      subtitle: `拦截率: ${blockRate}%`,
+      subtitle: `拦截率: ${blockRateStr}%`,
       icon: Shield,
     },
     {
@@ -68,7 +90,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Stats Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
         {statsCards.map((card, index) => {
           const Icon = card.icon;
           return (
@@ -98,7 +120,7 @@ export default function DashboardPage() {
           <Card>
             <CardHeader>
               <CardTitle>查询趋势 (24小时)</CardTitle>
-              <CardDescription>最近 24 小时的 DNS 查询统计</CardDescription>
+              <CardDescription>最近 24 小时 DNS 查询，每 5 秒自动刷新</CardDescription>
             </CardHeader>
             <CardContent>
               <QueryTrendChart data={trendData} isLoading={trendLoading} />
@@ -152,7 +174,7 @@ export default function DashboardPage() {
                 )}
               </div>
 
-              {/* Block Rate */}
+              {/* Block Rate with week-over-week */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Shield className="h-4 w-4 text-muted-foreground" />
@@ -161,11 +183,25 @@ export default function DashboardPage() {
                 {isLoading ? (
                   <div className="h-5 w-16 animate-pulse bg-muted rounded" />
                 ) : (
-                  <span className="text-sm font-medium">{blockRate}%</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-sm font-medium">{blockRateStr}%</span>
+                    {lastWeekBlockRate > 0 && (
+                      <span className={`flex items-center text-xs ${
+                        blockRateTrend === 'up' ? 'text-red-500' :
+                        blockRateTrend === 'down' ? 'text-green-500' :
+                        'text-muted-foreground'
+                      }`}>
+                        {blockRateTrend === 'up' && <TrendingUp className="h-3 w-3" />}
+                        {blockRateTrend === 'down' && <TrendingDown className="h-3 w-3" />}
+                        {blockRateTrend === 'flat' && <Minus className="h-3 w-3" />}
+                        {blockRateDiff > 0 ? '+' : ''}{blockRateDiff.toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
                 )}
               </div>
 
-              {/* Queries in last hour */}
+              {/* Cache Hit Rate */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <Activity className="h-4 w-4 text-muted-foreground" />
@@ -189,6 +225,101 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </div>
+      </div>
+
+      {/* Top 10 Row */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Top 10 Blocked Domains */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-4 w-4 text-destructive" />
+              Top 10 被拦截域名
+            </CardTitle>
+            <CardDescription>过去 24 小时拦截次数最多的域名</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {topDomainsLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-6 animate-pulse bg-muted rounded" />
+                ))}
+              </div>
+            ) : topDomains.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">暂无拦截数据</p>
+            ) : (
+              <div className="space-y-2">
+                {topDomains.map((entry, i) => {
+                  const maxCount = topDomains[0]?.count ?? 1;
+                  const pct = Math.round((entry.count / maxCount) * 100);
+                  return (
+                    <div key={i} className="space-y-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="truncate font-mono text-xs max-w-[70%]" title={entry.domain}>
+                          <span className="text-muted-foreground mr-1.5">{i + 1}.</span>
+                          {entry.domain}
+                        </span>
+                        <span className="text-muted-foreground shrink-0 ml-2">{formatNumber(entry.count)}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-destructive/60"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Top 10 Active Clients */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Activity className="h-4 w-4 text-primary" />
+              Top 10 活跃客户端
+            </CardTitle>
+            <CardDescription>过去 24 小时查询次数最多的客户端</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {topClientsLoading ? (
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <div key={i} className="h-6 animate-pulse bg-muted rounded" />
+                ))}
+              </div>
+            ) : topClients.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">暂无客户端数据</p>
+            ) : (
+              <div className="space-y-2">
+                {topClients.map((entry, i) => {
+                  const maxCount = topClients[0]?.count ?? 1;
+                  const pct = Math.round((entry.count / maxCount) * 100);
+                  return (
+                    <div key={i} className="space-y-1">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className="font-mono text-xs">
+                          <span className="text-muted-foreground mr-1.5">{i + 1}.</span>
+                          {entry.client_ip}
+                        </span>
+                        <span className="text-muted-foreground shrink-0 ml-2">{formatNumber(entry.count)}</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-primary/50"
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
     </div>
   );

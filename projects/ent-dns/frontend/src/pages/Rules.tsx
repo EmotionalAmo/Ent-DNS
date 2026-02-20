@@ -50,6 +50,8 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 
 const PER_PAGE = 50;
@@ -249,15 +251,17 @@ export default function RulesPage() {
   const total = data?.total ?? 0;
   const totalPages = Math.max(1, Math.ceil(total / PER_PAGE));
 
-  const deleteMutation = useMutation({
-    mutationFn: rulesApi.deleteRules,
-    onSuccess: () => {
+  const bulkMutation = useMutation({
+    mutationFn: ({ ids, action }: { ids: string[]; action: 'enable' | 'disable' | 'delete' }) =>
+      rulesApi.bulkAction(ids, action),
+    onSuccess: (data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['rules'] });
       setSelectedIds(new Set());
-      toast.success(`已删除 ${selectedIds.size} 条规则`);
+      const actionLabel = variables.action === 'enable' ? '启用' : variables.action === 'disable' ? '禁用' : '删除';
+      toast.success(`已${actionLabel} ${data.affected} 条规则`);
     },
     onError: (error: any) => {
-      toast.error(`删除失败: ${error.message || '未知错误'}`);
+      toast.error(`操作失败: ${error.message || '未知错误'}`);
     },
   });
 
@@ -278,8 +282,18 @@ export default function RulesPage() {
 
   const handleDeleteConfirm = () => {
     if (selectedIds.size === 0) return;
-    deleteMutation.mutate(Array.from(selectedIds));
+    bulkMutation.mutate({ ids: Array.from(selectedIds), action: 'delete' });
     setDeleteDialogOpen(false);
+  };
+
+  const handleBulkEnable = () => {
+    if (selectedIds.size === 0) return;
+    bulkMutation.mutate({ ids: Array.from(selectedIds), action: 'enable' });
+  };
+
+  const handleBulkDisable = () => {
+    if (selectedIds.size === 0) return;
+    bulkMutation.mutate({ ids: Array.from(selectedIds), action: 'disable' });
   };
 
   const formatDate = (dateStr: string) =>
@@ -345,10 +359,30 @@ export default function RulesPage() {
             {isExporting ? '导出中...' : '导出'}
           </Button>
           {selectedIds.size > 0 && (
-            <Button variant="destructive" size="sm" onClick={() => setDeleteDialogOpen(true)}>
-              <Trash2 size={16} className="mr-1" />
-              删除 ({selectedIds.size})
-            </Button>
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBulkEnable}
+                disabled={bulkMutation.isPending}
+              >
+                <ToggleRight size={14} className="mr-1 text-green-600" />
+                启用 ({selectedIds.size})
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBulkDisable}
+                disabled={bulkMutation.isPending}
+              >
+                <ToggleLeft size={14} className="mr-1 text-orange-500" />
+                禁用 ({selectedIds.size})
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => setDeleteDialogOpen(true)} disabled={bulkMutation.isPending}>
+                <Trash2 size={16} className="mr-1" />
+                删除 ({selectedIds.size})
+              </Button>
+            </>
           )}
           <Button onClick={() => setCreateDialogOpen(true)}>
             <Plus size={16} className="mr-1" />
@@ -402,7 +436,7 @@ export default function RulesPage() {
             </div>
           ) : (
             <>
-              <div className="rounded-md border mx-6">
+              <div className="rounded-md border mx-6 overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>

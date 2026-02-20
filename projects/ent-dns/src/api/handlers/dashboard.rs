@@ -52,12 +52,32 @@ pub async fn get_stats(
         .fetch_one(&state.db)
         .await?;
 
+    // Last-week same 24h window for block-rate trend (week-over-week)
+    let (week_total,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM query_log WHERE time >= datetime('now', '-8 days') AND time < datetime('now', '-7 days')"
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let (week_blocked,): (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM query_log WHERE status = 'blocked' AND time >= datetime('now', '-8 days') AND time < datetime('now', '-7 days')"
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    let last_week_block_rate = if week_total > 0 {
+        (week_blocked as f64 / week_total as f64 * 1000.0).round() / 10.0
+    } else {
+        0.0
+    };
+
     Ok(Json(json!({
         "total_queries": total,
         "blocked_queries": blocked,
         "allowed_queries": allowed,
         "cached_queries": cached,
         "block_rate": (block_rate * 10.0).round() / 10.0,
+        "last_week_block_rate": last_week_block_rate,
         "filter_rules": filter_rules,
         "filter_lists": filter_lists,
         "clients": clients,
@@ -67,6 +87,52 @@ pub async fn get_stats(
 #[derive(Deserialize)]
 pub struct TrendParams {
     pub hours: Option<i64>,
+}
+
+pub async fn get_top_blocked_domains(
+    State(state): State<Arc<AppState>>,
+    _auth: AuthUser,
+    Query(params): Query<TrendParams>,
+) -> AppResult<Json<Value>> {
+    let hours = params.hours.unwrap_or(24).clamp(1, 168);
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT question, COUNT(*) as cnt FROM query_log
+         WHERE status = 'blocked' AND time >= datetime('now', printf('-%d hours', ?))
+         GROUP BY question ORDER BY cnt DESC LIMIT 10"
+    )
+    .bind(hours)
+    .fetch_all(&state.db)
+    .await?;
+
+    let data: Vec<Value> = rows
+        .into_iter()
+        .map(|(domain, count)| json!({"domain": domain, "count": count}))
+        .collect();
+
+    Ok(Json(json!(data)))
+}
+
+pub async fn get_top_clients(
+    State(state): State<Arc<AppState>>,
+    _auth: AuthUser,
+    Query(params): Query<TrendParams>,
+) -> AppResult<Json<Value>> {
+    let hours = params.hours.unwrap_or(24).clamp(1, 168);
+    let rows: Vec<(String, i64)> = sqlx::query_as(
+        "SELECT client_ip, COUNT(*) as cnt FROM query_log
+         WHERE time >= datetime('now', printf('-%d hours', ?))
+         GROUP BY client_ip ORDER BY cnt DESC LIMIT 10"
+    )
+    .bind(hours)
+    .fetch_all(&state.db)
+    .await?;
+
+    let data: Vec<Value> = rows
+        .into_iter()
+        .map(|(client_ip, count)| json!({"client_ip": client_ip, "count": count}))
+        .collect();
+
+    Ok(Json(json!(data)))
 }
 
 pub async fn get_query_trend(
