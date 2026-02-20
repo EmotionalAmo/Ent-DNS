@@ -4,13 +4,12 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::info;
 
-mod api;
-mod auth;
-mod config;
-mod db;
-mod dns;
-mod error;
-mod metrics;
+// Re-use modules from the library crate
+use ent_dns::api;
+use ent_dns::config;
+use ent_dns::db;
+use ent_dns::dns;
+use ent_dns::metrics;
 
 #[tokio::main]
 async fn main() -> Result<()> {

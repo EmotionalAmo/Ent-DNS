@@ -93,7 +93,8 @@ pub fn parse_adguard_rules(content: &str) -> (Vec<String>, Vec<String>) {
         // Parse exception rules (@@||domain^)
         if let Some(caps) = ADGUARD_EXCEPTION.captures(line) {
             if let Some(domain) = caps.get(1) {
-                allow_rules.push(format!("@@||{}", domain.as_str()));
+                // Bug fix: append `^` so the rule matches AdGuard syntax expected by RuleSet
+                allow_rules.push(format!("@@||{}^", domain.as_str()));
             }
             continue;
         }

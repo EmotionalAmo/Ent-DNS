@@ -9,6 +9,10 @@ description = "Enterprise-grade DNS filtering server"
 name = "ent-dns"
 path = "src/main.rs"
 
+[lib]
+name = "ent_dns"
+path = "src/lib.rs"
+
 [dependencies]
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -65,6 +69,12 @@ dashmap = "6"
 
 # HTTP client for remote filter lists
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2"] }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "http2", "json"] }
 
 [profile.release]
 opt-level = 3

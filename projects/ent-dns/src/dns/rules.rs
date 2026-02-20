@@ -267,4 +267,110 @@ mod tests {
         // DNS queries often come with trailing dot
         assert!(rs.is_blocked("example.com."));
     }
+
+    // --- 新增扩展测试用例 ---
+
+    #[test]
+    fn test_case_insensitive_blocking() {
+        let mut rs = RuleSet::new();
+        rs.add_rule("||Example.COM^");
+        // 规则本身应被标准化为小写
+        assert!(rs.is_blocked("example.com"));
+        assert!(rs.is_blocked("EXAMPLE.COM"));
+        assert!(rs.is_blocked("sub.Example.Com"));
+    }
+
+    #[test]
+    fn test_add_rules_from_str_bulk() {
+        let mut rs = RuleSet::new();
+        let content = "||ads.example.com^\n# comment\n||tracker.net^\n\n! another comment\n||malware.io^";
+        let count = rs.add_rules_from_str(content);
+        // 3 valid rules, 2 comments, 1 blank = 3 added
+        assert_eq!(count, 3);
+        assert_eq!(rs.blocked_count(), 3);
+        assert!(rs.is_blocked("ads.example.com"));
+        assert!(rs.is_blocked("tracker.net"));
+        assert!(rs.is_blocked("malware.io"));
+    }
+
+    #[test]
+    fn test_parent_domain_not_blocked_by_subdomain_rule() {
+        // ||sub.example.com^ should NOT block example.com itself
+        let mut rs = RuleSet::new();
+        rs.add_rule("||sub.example.com^");
+        assert!(rs.is_blocked("sub.example.com"));
+        assert!(rs.is_blocked("deep.sub.example.com"));
+        assert!(!rs.is_blocked("example.com"));  // 父域名不应被阻止
+        assert!(!rs.is_blocked("other.example.com"));  // 兄弟子域名不应被阻止
+    }
+
+    #[test]
+    fn test_allowlist_only_no_block() {
+        // 只有白名单，没有黑名单时，域名不应被阻止
+        let mut rs = RuleSet::new();
+        rs.add_rule("@@||safe.com^");
+        assert!(!rs.is_blocked("safe.com"));
+        assert!(!rs.is_blocked("any.domain.com"));
+    }
+
+    #[test]
+    fn test_hosts_localhost_skipped() {
+        // localhost 和 .local 条目应被跳过
+        let mut rs = RuleSet::new();
+        assert!(!rs.add_rule("127.0.0.1 localhost"));
+        assert!(!rs.add_rule("0.0.0.0 mydevice.local"));
+        assert_eq!(rs.blocked_count(), 0);
+    }
+
+    #[test]
+    fn test_regex_rules_skipped() {
+        // 正则规则（/pattern/）应被跳过不处理
+        let mut rs = RuleSet::new();
+        assert!(!rs.add_rule("/^ads\\./"));
+        assert_eq!(rs.blocked_count(), 0);
+    }
+
+    #[test]
+    fn test_bare_tld_rejected() {
+        // 裸 TLD（如 "com"）不是有效域名，应被拒绝
+        let mut rs = RuleSet::new();
+        assert!(!rs.add_rule("com"));
+        assert_eq!(rs.blocked_count(), 0);
+    }
+
+    #[test]
+    fn test_adguard_format_with_options() {
+        // ||domain^$third-party 类选项应被忽略，域名正常添加
+        let mut rs = RuleSet::new();
+        rs.add_rule("||ads.example.com^$third-party");
+        assert!(rs.is_blocked("ads.example.com"));
+    }
+
+    #[test]
+    fn test_stats_after_bulk_add() {
+        let mut rs = RuleSet::new();
+        rs.add_rule("||block1.com^");
+        rs.add_rule("||block2.com^");
+        rs.add_rule("@@||allow1.com^");
+        assert_eq!(rs.blocked_count(), 2);
+        assert_eq!(rs.allowed_count(), 1);
+    }
+
+    #[test]
+    fn test_ipv6_hosts_format() {
+        // ::1 格式的 hosts 条目也应被识别
+        let mut rs = RuleSet::new();
+        rs.add_rule("::1 ipv6block.com");
+        // ipv6block.com 不是 localhost 也不是 .local，应被阻止
+        assert!(rs.is_blocked("ipv6block.com"));
+    }
+
+    #[test]
+    fn test_deep_subdomain_matching() {
+        // 深层子域名也应被匹配
+        let mut rs = RuleSet::new();
+        rs.add_rule("||evil.com^");
+        assert!(rs.is_blocked("a.b.c.d.evil.com"));
+        assert!(!rs.is_blocked("notevil.com"));
+    }
 }
